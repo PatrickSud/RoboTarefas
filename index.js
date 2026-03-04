@@ -2,17 +2,18 @@
 const { chromium } = require('playwright');
 const nodemailer = require('nodemailer');
 const { exec }   = require('child_process');
+const fs         = require('fs'); 
 
 // ==========================================
 // 1. CONFIGURAÇÕES
 // ==========================================
 const contas = [
     { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015' },
-    { nome: 'Karen', telefone: '19996722502', senha: 'Sem-Senha', email: 'karen@exemplo.com' },
+    { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com' },
     { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015' },
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com' },
     { nome: 'Daniel',    telefone: '19998185339', senha: '@bt3RWqUTy.qi'},
-    { nome: 'Devania',    telefone: '19992509897', senha: 'Sem-Senha', email: 'devania@exemplo.com' },
+    { nome: 'Devania',    telefone: '19992509897', senha: 'Vixx140814', email: 'devaniaekaren@gmail.com' },
     { nome: 'Daniel Prieto',    telefone: '993940008', senha: 'DSP199s.', email: 'daniel.prieto220293@gmail.com' }
 
 ];
@@ -169,10 +170,19 @@ async function executarAutomacao() {
             console.error(`Falha ao processar a conta de ${conta.nome} (${conta.telefone}):`, erro.message);
             relatorioFinal += `${conta.nome}: ERRO - ${erro.message}\n`;
 
-            // NOVO: Disparo do e-mail de erro em caso de falha
+            // NOVO: Tirar print da tela no exato momento do erro
+            const caminhoPrint = `erro_${conta.nome}.png`;
+            try {
+                await page.screenshot({ path: caminhoPrint, fullPage: true });
+                console.log(`Print de erro saved como ${caminhoPrint}`);
+            } catch (e) {
+                console.log('Não foi possível tirar o print da tela.');
+            }
+
+            // Disparo do e-mail de erro em caso de falha (agora enviando o print junto)
             if (conta.email) {
                 console.log(`Preparando envio de e-mail de erro para ${conta.nome}...`);
-                await enviarEmailErro(conta.email, conta.nome, dataHoje);
+                await enviarEmailErro(conta.email, conta.nome, dataHoje, caminhoPrint);
             }
             
         } finally {
@@ -243,10 +253,10 @@ async function enviarEmailIndividual(emailDestino, nome, saldo, qtdTarefas, data
         // Verifica se fez tarefas ou se já estavam concluídas
         if (qtdTarefas > 0) {
             assunto = `Sucesso: Tarefas Concluídas - ${dataHoje}`;
-            conteudo = `Olá, ${nome}!\n\nO robô concluiu ${qtdTarefas} tarefa(s) em sua conta hoje (${dataHoje}).\n\nSeu saldo atualizado é: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas`;
+            conteudo = `Olá, ${nome}!\n\nO robô concluiu ${qtdTarefas} tarefa(s) em sua conta hoje (${dataHoje}).\n\nSeu saldo atualizado é: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas SP`;
         } else {
             assunto = `Aviso: Sem Tarefas Pendentes - ${dataHoje}`;
-            conteudo = `Olá, ${nome}!\n\nO robô acessou sua conta hoje (${dataHoje}), mas as tarefas já estavam concluídas.\n\nMesmo assim, capturamos seu saldo atual: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas`;
+            conteudo = `Olá, ${nome}!\n\nO robô acessou sua conta hoje (${dataHoje}), mas as tarefas já estavam concluídas.\n\nMesmo assim, capturamos seu saldo atual: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas SP`;
         }
 
         await transporter.sendMail({
@@ -262,7 +272,7 @@ async function enviarEmailIndividual(emailDestino, nome, saldo, qtdTarefas, data
     }
 }
 
-async function enviarEmailErro(emailDestino, nome, dataHoje) {
+async function enviarEmailErro(emailDestino, nome, dataHoje, caminhoPrint) {
     try {
         let transporter = nodemailer.createTransport({
             service: 'gmail',
@@ -273,16 +283,33 @@ async function enviarEmailErro(emailDestino, nome, dataHoje) {
         });
 
         let assunto = `Aviso Urgente: Falha de Acesso - ${dataHoje}`;
-        let conteudo = `Olá, ${nome}!\n\nO robô tentou acessar sua conta hoje (${dataHoje}), mas não conseguiu entrar na plataforma.\n\nIsso pode ter ocorrido por instabilidade no site ou problemas de login. Por favor, verifique sua conta manualmente quando possível.\n\nAtenciosamente,\nRobô de Tarefas`;
+        let conteudo = `Olá, ${nome}!\n\nO robô tentou acessar sua conta hoje (${dataHoje}), mas encontrou um erro e não conseguiu finalizar o processo.\n\nVeja a imagem em anexo para entender em qual tela o robô travou. Isso pode ajudar a identificar se foi uma instabilidade no site ou um pop-up inesperado.\n\nAtenciosamente,\nRobô de Tarefas SP`;
 
-        await transporter.sendMail({
+        let opcoesEmail = {
             from: `"Robô de Tarefas" <${configuracaoEmail.usuario}>`,
             to: emailDestino,
             subject: assunto,
             text: conteudo
-        });
+        };
 
-        console.log(` -> E-mail de ERRO enviado para ${nome} com sucesso!`);
+        // Se o print foi gerado com sucesso, anexa ao e-mail
+        if (caminhoPrint && fs.existsSync(caminhoPrint)) {
+            opcoesEmail.attachments = [
+                {
+                    filename: `Erro_${nome}.png`,
+                    path: `./${caminhoPrint}`
+                }
+            ];
+        }
+
+        await transporter.sendMail(opcoesEmail);
+        console.log(` -> E-mail de ERRO com print enviado para ${nome} com sucesso!`);
+
+        // Limpeza: Apaga a imagem do servidor após o envio para não ocupar espaço
+        if (caminhoPrint && fs.existsSync(caminhoPrint)) {
+            fs.unlinkSync(caminhoPrint);
+        }
+
     } catch (erro) {
         console.error(` -> Falha ao enviar e-mail de erro para ${nome}:`, erro.message);
     }
