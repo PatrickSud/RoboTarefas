@@ -14,7 +14,7 @@ const contas = [
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com' },
     { nome: 'Daniel',    telefone: '19998185339', senha: '@bt3RWqUTy.qi'},
     { nome: 'Devania',    telefone: '19992509897', senha: 'Vixx140814', email: 'devaniaekaren@gmail.com' },
-    { nome: 'Daniel Prieto',    telefone: '993940008', senha: 'DSP199s.', email: 'daniel.prieto220293@gmail.com' }
+    { nome: 'Daniel Prieto',    telefone: '993940008', senha: 'DSP199s.', email: 'Prietod1999@gmail.com' }
 
 ];
 
@@ -157,7 +157,7 @@ async function executarAutomacao() {
             const carteiraReceita = await page.locator('dt:has-text("Carteira de Receita(BRL)") + dd').innerText();
             console.log(`Saldo capturado: ${carteiraReceita}`);
 
-            relatorioFinal += `${conta.nome}: ${carteiraReceita}\n`;
+            relatorioFinal += `${conta.nome} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`;
 
             // Chama a função passando o contadorTarefas
             if (conta.email) {
