@@ -170,19 +170,17 @@ async function executarAutomacao() {
     await enviarEmail(relatorioFinal, dataHoje);
 
     // ==========================================
-    // 7. DESLIGAR A MÁQUINA AWS (apenas em produção)
+    // 7. DESLIGAR A MÁQUINA AWS (WINDOWS)
     // ==========================================
-    // Só executa se a variável AUTO_SHUTDOWN=true estiver definida.
-    // Na EC2, defina isso no cron: AUTO_SHUTDOWN=true node index.js
-    // Em desenvolvido local, não define a variável e a máquina não desliga.
     if (process.env.AUTO_SHUTDOWN === 'true') {
         console.log('\nRobo finalizado. Desligando a máquina AWS em 10 segundos...');
         setTimeout(() => {
-            exec('sudo shutdown -h now', (err) => {
+            // Comando para Windows: /s (shutdown), /f (force), /t 10 (timeout de 10 segundos)
+            exec('shutdown /s /f /t 10', (err) => {
                 if (err) console.error('Erro ao desligar a máquina:', err.message);
                 else console.log('Comando de desligamento enviado.');
             });
-        }, 10000); // 10s de margem para garantir que o e-mail foi enviado
+        }, 10000); 
     }
 }
 
