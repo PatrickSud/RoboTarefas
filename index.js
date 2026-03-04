@@ -13,7 +13,7 @@ const contas = [
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com' },
     { nome: 'Daniel',    telefone: '19998185339', senha: '@bt3RWqUTy.qi'},
     { nome: 'Devania',    telefone: '19992509897', senha: 'Sem-Senha', email: 'devania@exemplo.com' },
-    { nome: 'Vivi',    telefone: '993940008', senha: 'DSP199s.', email: 'vivi@exemplo.com' }
+    { nome: 'Daniel Prieto',    telefone: '993940008', senha: 'DSP199s.', email: 'daniel.prieto220293@gmail.com' }
 
 ];
 
@@ -158,15 +158,23 @@ async function executarAutomacao() {
 
             relatorioFinal += `${conta.nome}: ${carteiraReceita}\n`;
 
-            // NOVO: Disparo de e-mail individual se a conta tiver o campo "email" preenchido
+            // Chama a função passando o contadorTarefas
             if (conta.email) {
-                console.log(`Preparando envio de e-mail individual para ${conta.nome}...`);
-                await enviarEmailIndividual(conta.email, conta.nome, carteiraReceita, dataHoje);
+                console.log(`Preparando envio de e-mail de status para ${conta.nome}...`);
+                // Note que adicionamos a variável contadorTarefas aqui na chamada
+                await enviarEmailIndividual(conta.email, conta.nome, carteiraReceita, contadorTarefas, dataHoje);
             }
 
         } catch (erro) {
             console.error(`Falha ao processar a conta de ${conta.nome} (${conta.telefone}):`, erro.message);
             relatorioFinal += `${conta.nome}: ERRO - ${erro.message}\n`;
+
+            // NOVO: Disparo do e-mail de erro em caso de falha
+            if (conta.email) {
+                console.log(`Preparando envio de e-mail de erro para ${conta.nome}...`);
+                await enviarEmailErro(conta.email, conta.nome, dataHoje);
+            }
+            
         } finally {
             await context.close(); 
             console.log(`Conta de ${conta.nome} finalizada.\n`);
@@ -219,7 +227,7 @@ async function enviarEmail(conteudo, dataHoje) {
     }
 }
 
-async function enviarEmailIndividual(emailDestino, nome, saldo, dataHoje) {
+async function enviarEmailIndividual(emailDestino, nome, saldo, qtdTarefas, dataHoje) {
     try {
         let transporter = nodemailer.createTransport({
             service: 'gmail',
@@ -229,19 +237,54 @@ async function enviarEmailIndividual(emailDestino, nome, saldo, dataHoje) {
             }
         });
 
-        // Monta o texto do e-mail que o usuário vai receber
-        let conteudo = `Olá, ${nome}!\n\nO robô acabou de processar sua conta hoje (${dataHoje}).\n\nSeu saldo atualizado é: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas`;
+        let assunto = '';
+        let conteudo = '';
 
-        let info = await transporter.sendMail({
+        // Verifica se fez tarefas ou se já estavam concluídas
+        if (qtdTarefas > 0) {
+            assunto = `Sucesso: Tarefas Concluídas - ${dataHoje}`;
+            conteudo = `Olá, ${nome}!\n\nO robô concluiu ${qtdTarefas} tarefa(s) em sua conta hoje (${dataHoje}).\n\nSeu saldo atualizado é: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas`;
+        } else {
+            assunto = `Aviso: Sem Tarefas Pendentes - ${dataHoje}`;
+            conteudo = `Olá, ${nome}!\n\nO robô acessou sua conta hoje (${dataHoje}), mas as tarefas já estavam concluídas.\n\nMesmo assim, capturamos seu saldo atual: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas`;
+        }
+
+        await transporter.sendMail({
             from: `"Robô de Tarefas" <${configuracaoEmail.usuario}>`,
             to: emailDestino,
-            subject: `Seu Saldo Atualizado - ${dataHoje}`,
+            subject: assunto,
             text: conteudo
         });
 
-        console.log(` -> E-mail individual enviado para ${nome} com sucesso!`);
+        console.log(` -> E-mail de status (Tarefas: ${qtdTarefas}) enviado para ${nome} com sucesso!`);
     } catch (erro) {
-        console.error(` -> Falha ao enviar e-mail individual para ${nome}:`, erro.message);
+        console.error(` -> Falha ao enviar e-mail de status para ${nome}:`, erro.message);
+    }
+}
+
+async function enviarEmailErro(emailDestino, nome, dataHoje) {
+    try {
+        let transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: configuracaoEmail.usuario,
+                pass: configuracaoEmail.senhaApp
+            }
+        });
+
+        let assunto = `Aviso Urgente: Falha de Acesso - ${dataHoje}`;
+        let conteudo = `Olá, ${nome}!\n\nO robô tentou acessar sua conta hoje (${dataHoje}), mas não conseguiu entrar na plataforma.\n\nIsso pode ter ocorrido por instabilidade no site ou problemas de login. Por favor, verifique sua conta manualmente quando possível.\n\nAtenciosamente,\nRobô de Tarefas`;
+
+        await transporter.sendMail({
+            from: `"Robô de Tarefas" <${configuracaoEmail.usuario}>`,
+            to: emailDestino,
+            subject: assunto,
+            text: conteudo
+        });
+
+        console.log(` -> E-mail de ERRO enviado para ${nome} com sucesso!`);
+    } catch (erro) {
+        console.error(` -> Falha ao enviar e-mail de erro para ${nome}:`, erro.message);
     }
 }
 
