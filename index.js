@@ -8,7 +8,13 @@ const { exec }   = require('child_process');
 // ==========================================
 const contas = [
     { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015' },
-    { nome: 'Daniel',    telefone: '19998185339', senha: '@bt3RWqUTy.qi' }
+    { nome: 'Karen', telefone: '19996722502', senha: 'Sem-Senha', email: 'karen@exemplo.com' },
+    { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015' },
+    { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com' },
+    { nome: 'Daniel',    telefone: '19998185339', senha: '@bt3RWqUTy.qi'},
+    { nome: 'Devania',    telefone: '19992509897', senha: 'Sem-Senha', email: 'devania@exemplo.com' },
+    { nome: 'Vivi',    telefone: '993940008', senha: 'DSP199s.', email: 'vivi@exemplo.com' }
+
 ];
 
 const configuracaoEmail = {
@@ -152,6 +158,12 @@ async function executarAutomacao() {
 
             relatorioFinal += `${conta.nome}: ${carteiraReceita}\n`;
 
+            // NOVO: Disparo de e-mail individual se a conta tiver o campo "email" preenchido
+            if (conta.email) {
+                console.log(`Preparando envio de e-mail individual para ${conta.nome}...`);
+                await enviarEmailIndividual(conta.email, conta.nome, carteiraReceita, dataHoje);
+            }
+
         } catch (erro) {
             console.error(`Falha ao processar a conta de ${conta.nome} (${conta.telefone}):`, erro.message);
             relatorioFinal += `${conta.nome}: ERRO - ${erro.message}\n`;
@@ -204,6 +216,32 @@ async function enviarEmail(conteudo, dataHoje) {
         console.log("E-mail enviado com sucesso! ID:", info.messageId);
     } catch (erro) {
         console.error("Falha ao enviar e-mail:", erro.message);
+    }
+}
+
+async function enviarEmailIndividual(emailDestino, nome, saldo, dataHoje) {
+    try {
+        let transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: configuracaoEmail.usuario,
+                pass: configuracaoEmail.senhaApp
+            }
+        });
+
+        // Monta o texto do e-mail que o usuário vai receber
+        let conteudo = `Olá, ${nome}!\n\nO robô acabou de processar sua conta hoje (${dataHoje}).\n\nSeu saldo atualizado é: ${saldo}\n\nAtenciosamente,\nRobô de Tarefas`;
+
+        let info = await transporter.sendMail({
+            from: `"Robô de Tarefas" <${configuracaoEmail.usuario}>`,
+            to: emailDestino,
+            subject: `Seu Saldo Atualizado - ${dataHoje}`,
+            text: conteudo
+        });
+
+        console.log(` -> E-mail individual enviado para ${nome} com sucesso!`);
+    } catch (erro) {
+        console.error(` -> Falha ao enviar e-mail individual para ${nome}:`, erro.message);
     }
 }
 
