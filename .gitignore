@@ -1,9 +1,6 @@
 # Dependências
 node_modules/
 
-# Credenciais — NUNCA subir para o GitHub
-.env
-
 # Logs de execução (gerados na EC2)
 logs/
 
