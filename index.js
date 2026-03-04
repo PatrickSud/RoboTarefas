@@ -1,4 +1,4 @@
-require('dotenv').config();
+
 const { chromium } = require('playwright');
 const nodemailer = require('nodemailer');
 const { exec }   = require('child_process');
@@ -7,13 +7,13 @@ const { exec }   = require('child_process');
 // 1. CONFIGURAÇÕES
 // ==========================================
 const contas = [
-    { nome: process.env.CONTA_1_NOME, telefone: process.env.CONTA_1_TELEFONE, senha: process.env.CONTA_1_SENHA },
-    { nome: process.env.CONTA_2_NOME, telefone: process.env.CONTA_2_TELEFONE, senha: process.env.CONTA_2_SENHA }
+    { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015' },
+    { nome: 'Daniel',    telefone: '19998185339', senha: '@bt3RWqUTy.qi' }
 ];
 
 const configuracaoEmail = {
-    usuario:   process.env.EMAIL_USUARIO,
-    senhaApp:  process.env.EMAIL_SENHA_APP
+    usuario:  'patricksud96@gmail.com',
+    senhaApp: 'wzbv amfm etxh zyyi'
 };
 
 // ==========================================
