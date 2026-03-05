@@ -4,7 +4,7 @@ const nodemailer = require('nodemailer');
 const { exec } = require('child_process');
 const fs = require('fs');
 const qrcode = require('qrcode-terminal');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 
 const client = new Client({
     authStrategy: new LocalAuth()
@@ -30,8 +30,8 @@ const contas = [
     { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true },
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com', recebeWhatsApp: true },
     { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: false },
-    { nome: 'Devania', telefone: '10992509897', senha: 'ixx140814', email: 'devaniaekaren@gmail.com', recebeWhatsApp: true },
-    { nome: 'Daniel Prieto', telefone: '993940008', senha: 'DSP199s.', email: 'Prietod1999@gmail.com', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
+    { nome: 'Devania', telefone: '19992509897', senha: 'Vixx140814', email: 'devaniaekaren@gmail.com', recebeWhatsApp: true, testar: true },
+    { nome: 'Daniel Prieto', telefone: '993940008', senha: 'DSP199s.', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
 ];
 
 const configuracaoEmail = {
@@ -46,9 +46,20 @@ async function executarAutomacao() {
     let relatorioFinal = "Relatório de Saldos das Contas:\n\n";
     const dataHoje = new Date().toLocaleDateString('pt-BR');
 
+    // NOVO: LÓGICA DE TESTE
+    // Verifica se existe alguma conta marcada com 'testar: true'
+    const contasDeTeste = contas.filter(conta => conta.testar === true);
+    
+    // Se existir, usa apenas as de teste. Se não existir, usa a lista original completa.
+    const contasParaProcessar = contasDeTeste.length > 0 ? contasDeTeste : contas;
+
+    if (contasDeTeste.length > 0) {
+        console.log(`\n⚠️ MODO DE TESTE ATIVADO: Executando apenas ${contasDeTeste.length} conta(s).\n`);
+    }
+
     const browser = await chromium.launch({ headless: false });
 
-    for (const conta of contas) {
+    for (const conta of contasParaProcessar) {
         console.log(`\n--- Iniciando conta: ${conta.nome} (${conta.telefone}) ---`);
 
         const context = await browser.newContext();
@@ -173,7 +184,7 @@ async function executarAutomacao() {
             const carteiraReceita = await page.locator('dt:has-text("Carteira de Receita(BRL)") + dd').innerText();
             console.log(`Saldo capturado: ${carteiraReceita}`);
 
-            relatorioFinal += `${conta.nome} - Tarefass: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`;
+            relatorioFinal += `${conta.nome} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`;
 
             // Chama a função passando o contadorTarefas
             if (conta.email) {
@@ -192,27 +203,34 @@ async function executarAutomacao() {
             console.error(`Falha ao processar a conta de ${conta.nome} (${conta.telefone}):`, erro.message);
             relatorioFinal += `${conta.nome}: ERRO - ${erro.message}\n`;
 
-            // NOVO: Tirar print da tela no exato momento do erro
             const caminhoPrint = `erro_${conta.nome}.png`;
             try {
                 await page.screenshot({ path: caminhoPrint, fullPage: true });
-                console.log(`Print de erro saved como ${caminhoPrint}`);
+                console.log(`Print de erro salvo como ${caminhoPrint}`);
             } catch (e) {
                 console.log('Não foi possível tirar o print da tela.');
             }
 
-            // Disparo do e-mail de erro em caso de falha (agora enviando o print junto)
+            // 1. Envia o E-mail com o print
             if (conta.email) {
                 console.log(`Preparando envio de e-mail de erro para ${conta.nome}...`);
                 await enviarEmailErro(conta.email, conta.nome, dataHoje, caminhoPrint);
             }
 
+            // 2. Envia o WhatsApp com o print
             const numeroEnvio = conta.telefoneWhatsApp || conta.telefone;
             if (conta.recebeWhatsApp) {
                 console.log(`Preparando envio de WhatsApp de erro para ${conta.nome}...`);
-                await enviarWhatsAppErro(numeroEnvio, conta.nome, dataHoje);
+                await enviarWhatsAppErro(numeroEnvio, conta.nome, dataHoje, caminhoPrint);
             }
 
+            // 3. LIMPEZA: Agora apagamos a imagem apenas depois de mandar nos dois
+            if (caminhoPrint && fs.existsSync(caminhoPrint)) {
+                try {
+                    fs.unlinkSync(caminhoPrint);
+                } catch(e) {}
+            }
+            
         } finally {
             await context.close();
             console.log(`Conta de ${conta.nome} finalizada.\n`);
@@ -222,10 +240,19 @@ async function executarAutomacao() {
     await browser.close();
 
     // ==========================================
-    // 6. ENVIAR E-MAIL FINAL
+    // 6. ENVIAR E-MAIL FINAL E WHATSAPP FINAL
     // ==========================================
     console.log("Enviando e-mail com o relatório...");
     await enviarEmail(relatorioFinal, dataHoje);
+
+    console.log("Enviando relatório final via WhatsApp para o Administrador...");
+    try {
+        const numeroAdmin = '5519995487421@c.us'; // O seu número configurado
+        await client.sendMessage(numeroAdmin, `*Relatório Diário (${dataHoje})*\n\n${relatorioFinal}`);
+        console.log("Relatório final enviado pelo WhatsApp com sucesso!");
+    } catch (e) {
+        console.error("Falha ao enviar relatório final pelo WhatsApp:", e.message);
+    }
 
     // ==========================================
     // 7. FINALIZAÇÃO GRACIOSA
@@ -342,9 +369,9 @@ async function enviarEmailErro(emailDestino, nome, dataHoje, caminhoPrint) {
         console.log(` -> E-mail de ERRO com print enviado para ${nome} com sucesso!`);
 
         // Limpeza: Apaga a imagem do servidor após o envio para não ocupar espaço
-        if (caminhoPrint && fs.existsSync(caminhoPrint)) {
-            fs.unlinkSync(caminhoPrint);
-        }
+        // if (caminhoPrint && fs.existsSync(caminhoPrint)) {
+        //     fs.unlinkSync(caminhoPrint);
+        // }
 
     } catch (erro) {
         console.error(` -> Falha ao enviar e-mail de erro para ${nome}:`, erro.message);
@@ -369,13 +396,21 @@ async function enviarWhatsApp(numero, nome, saldo, qtdTarefas, dataHoje) {
     }
 }
 
-async function enviarWhatsAppErro(numero, nome, dataHoje) {
+async function enviarWhatsAppErro(numero, nome, dataHoje, caminhoPrint) {
     try {
         const numeroDestino = `55${numero}@c.us`;
-        const mensagem = `⚠️ *Aviso Urgente: Falha de Acesso* ⚠️\n\nOlá, ${nome}!\nO robô tentou acessar sua conta hoje (${dataHoje}) e encontrou um erro, não sendo possível concluir as tarefas.\nVerifique a conta quando puder.`;
-
-        await client.sendMessage(numeroDestino, mensagem);
-        console.log(` -> WhatsApp de ERRO enviado para ${nome} com sucesso!`);
+        const mensagem = `⚠️ *Aviso Urgente: Falha de Acesso* ⚠️\n\nOlá, ${nome}!\nO robô tentou acessar sua conta hoje (${dataHoje}) e encontrou um erro, não sendo possível concluir as tarefas.\n\nVeja o print da tela no momento do erro abaixo.`;
+        
+        // Verifica se a foto existe. Se existir, envia a foto com o texto embaixo (caption).
+        if (caminhoPrint && fs.existsSync(caminhoPrint)) {
+            const media = MessageMedia.fromFilePath(caminhoPrint);
+            await client.sendMessage(numeroDestino, media, { caption: mensagem });
+        } else {
+            // Se por algum motivo a foto não existir, envia apenas o texto.
+            await client.sendMessage(numeroDestino, mensagem);
+        }
+        
+        console.log(` -> WhatsApp de ERRO (com imagem) enviado para ${nome} com sucesso!`);
     } catch (erro) {
         console.error(` -> Falha ao enviar WhatsApp de erro para ${nome}:`, erro.message);
     }
