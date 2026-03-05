@@ -25,7 +25,7 @@ client.initialize();
 // 1. CONFIGURAÇÕES
 // ==========================================
 const contas = [
-    { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: true, telefoneWhatsApp: '19995487421', testar: true },
+    { nome: 'Jacqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: true, telefoneWhatsApp: '19995487421', testar: true },
     { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com', recebeWhatsApp: true },
     { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true },
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com', recebeWhatsApp: true },
