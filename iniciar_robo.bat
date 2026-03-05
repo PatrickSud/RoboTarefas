@@ -1,10 +1,15 @@
 @echo off
+echo Aguardando 30 segundos para a rede da AWS conectar...
+timeout /t 30
+
 cd C:\Users\Administrator\Desktop\RoboTarefas
 
+echo %date% %time% - Tentando baixar atualizacoes do GitHub... >> log_sistema.txt
 echo =======================================================
 echo Buscando atualizacoes de codigo no GitHub...
 echo =======================================================
-git pull origin main
+
+git pull origin main >> log_sistema.txt 2>&1
 echo.
 
 echo =======================================================
@@ -13,4 +18,4 @@ echo =======================================================
 timeout /t 180
 
 set AUTO_SHUTDOWN=true
-npm start
+npm start >> log_sistema.txt 2>&1
