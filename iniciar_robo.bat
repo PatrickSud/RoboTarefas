@@ -9,7 +9,7 @@ echo =======================================================
 echo Buscando atualizacoes de codigo no GitHub...
 echo =======================================================
 
-git pull origin main >> log_sistema.txt 2>&1
+git pull origin master >> log_sistema.txt 2>&1
 echo.
 
 echo =======================================================
