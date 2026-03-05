@@ -1,9 +1,20 @@
-# Dependências
+# Dependencias do Node.js
 node_modules/
 
-# Logs de execução (gerados na EC2)
-logs/
+# Autenticacao e Cache do WhatsApp
+.wwebjs_auth/
+.wwebjs_cache/
 
-# Arquivos de sistema Windows
+# Imagens de erro geradas pelo robo
+erro_*.png
+
+# Logs do sistema e do Node
+log_sistema.txt
+npm-debug.log*
+
+# Variaveis de ambiente e senhas (caso use no futuro)
+.env
+
+# Arquivos inuteis do Sistema Operacional
 Thumbs.db
-desktop.ini
+.DS_Store
