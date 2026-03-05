@@ -1,8 +1,8 @@
 
 const { chromium } = require('playwright');
 const nodemailer = require('nodemailer');
-const { exec }   = require('child_process');
-const fs         = require('fs'); 
+const { exec } = require('child_process');
+const fs = require('fs');
 const qrcode = require('qrcode-terminal');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 
@@ -29,13 +29,13 @@ const contas = [
     { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com', recebeWhatsApp: true },
     { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true },
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com', recebeWhatsApp: true },
-    { nome: 'Daniel',    telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: false },
-    { nome: 'Devania',    telefone: '19992509897', senha: 'Vixx140814', email: 'devaniaekaren@gmail.com', recebeWhatsApp: true },
-    { nome: 'Daniel Prieto',    telefone: '993940008', senha: 'DSP199s.', email: 'Prietod1999@gmail.com', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
+    { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: false },
+    { nome: 'Devania', telefone: '10992509897', senha: 'ixx140814', email: 'devaniaekaren@gmail.com', recebeWhatsApp: true },
+    { nome: 'Daniel Prieto', telefone: '993940008', senha: 'DSP199s.', email: 'Prietod1999@gmail.com', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
 ];
 
 const configuracaoEmail = {
-    usuario:  'patricksud96@gmail.com',
+    usuario: 'patricksud96@gmail.com',
     senhaApp: 'wzbv amfm etxh zyyi'
 };
 
@@ -50,14 +50,14 @@ async function executarAutomacao() {
 
     for (const conta of contas) {
         console.log(`\n--- Iniciando conta: ${conta.nome} (${conta.telefone}) ---`);
-        
+
         const context = await browser.newContext();
         const page = await context.newPage();
 
         try {
             console.log("Acessando tela de login...");
             await page.goto('https://sp4567.com/#/log');
-            await page.waitForTimeout(3000); 
+            await page.waitForTimeout(3000);
 
             console.log("Preenchendo credenciais...");
             await page.fill('input[type="text"].van-field__control', conta.telefone);
@@ -69,7 +69,7 @@ async function executarAutomacao() {
             await page.keyboard.press('Enter');
             console.log("Comando de Entrar enviado.");
 
-            await page.waitForSelector('.van-tabbar', { timeout: 15000 }); 
+            await page.waitForSelector('.van-tabbar', { timeout: 15000 });
 
             // ==========================================
             // 3. VERIFICAR COMUNICADOS
@@ -106,11 +106,11 @@ async function executarAutomacao() {
 
 
             console.log("Iniciando rotina de tarefas...");
-            
+
             // Clica no menu inferior para ir para as tarefas
-            await page.click('text="Tarefa"'); 
+            await page.click('text="Tarefa"');
             await page.waitForTimeout(2000);
-            
+
             let temTarefa = true;
             let contadorTarefas = 0;
 
@@ -149,7 +149,7 @@ async function executarAutomacao() {
                 } catch (e) {
                     // Se passar 3 segundos e ele não achar o botão "Enviar", cai aqui e sai do Loop
                     console.log(`Fim das tarefas. Total realizado: ${contadorTarefas}`);
-                    temTarefa = false; 
+                    temTarefa = false;
                 }
             }
 
@@ -212,9 +212,9 @@ async function executarAutomacao() {
                 console.log(`Preparando envio de WhatsApp de erro para ${conta.nome}...`);
                 await enviarWhatsAppErro(numeroEnvio, conta.nome, dataHoje);
             }
-            
+
         } finally {
-            await context.close(); 
+            await context.close();
             console.log(`Conta de ${conta.nome} finalizada.\n`);
         }
     }
@@ -244,7 +244,7 @@ async function executarAutomacao() {
                 if (err) console.error('Erro ao desligar a máquina:', err.message);
                 else console.log('Comando de desligamento enviado.');
             });
-        }, 10000); 
+        }, 10000);
     } else {
         process.exit(0);
     }
@@ -355,13 +355,13 @@ async function enviarWhatsApp(numero, nome, saldo, qtdTarefas, dataHoje) {
     try {
         const numeroDestino = `55${numero}@c.us`;
         let mensagem = '';
-        
+
         if (qtdTarefas > 0) {
             mensagem = `Olá, ${nome}! ✅\nO robô concluiu ${qtdTarefas} tarefa(s) com sucesso hoje (${dataHoje}).\nSaldo atualizado: ${saldo}`;
         } else {
             mensagem = `Olá, ${nome}! ℹ️\nO robô acessou sua conta hoje (${dataHoje}), mas as tarefas já estavam concluídas.\nSaldo atual: ${saldo}`;
         }
-        
+
         await client.sendMessage(numeroDestino, mensagem);
         console.log(` -> WhatsApp de status (Tarefas: ${qtdTarefas}) enviado para ${nome} com sucesso!`);
     } catch (erro) {
@@ -373,7 +373,7 @@ async function enviarWhatsAppErro(numero, nome, dataHoje) {
     try {
         const numeroDestino = `55${numero}@c.us`;
         const mensagem = `⚠️ *Aviso Urgente: Falha de Acesso* ⚠️\n\nOlá, ${nome}!\nO robô tentou acessar sua conta hoje (${dataHoje}) e encontrou um erro, não sendo possível concluir as tarefas.\nVerifique a conta quando puder.`;
-        
+
         await client.sendMessage(numeroDestino, mensagem);
         console.log(` -> WhatsApp de ERRO enviado para ${nome} com sucesso!`);
     } catch (erro) {
