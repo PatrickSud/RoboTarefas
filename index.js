@@ -173,7 +173,7 @@ async function executarAutomacao() {
             const carteiraReceita = await page.locator('dt:has-text("Carteira de Receita(BRL)") + dd').innerText();
             console.log(`Saldo capturado: ${carteiraReceita}`);
 
-            relatorioFinal += `${conta.nome} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`;
+            relatorioFinal += `${conta.nome} - Tarefa: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`;
 
             // Chama a função passando o contadorTarefas
             if (conta.email) {
