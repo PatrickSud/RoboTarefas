@@ -28,7 +28,7 @@ const contas = [
     { nome: 'Jacqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: true, telefoneWhatsApp: '19995487421', testar: true },
     { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com', recebeWhatsApp: true },
     { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true },
-    { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com', recebeWhatsApp: true },
+    { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', email: 'andrea.prieto220293@gmail.com', recebeWhatsApp: true, testar: true },
     { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: false },
     { nome: 'Devania', telefone: '10992509897', senha: 'Vixx140814', email: 'devaniaekaren@gmail.com', recebeWhatsApp: true },
     { nome: 'Daniel Prieto', telefone: '993940008', senha: 'DSP199s.', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
