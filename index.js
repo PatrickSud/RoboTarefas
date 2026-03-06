@@ -3,11 +3,20 @@ const { chromium } = require('playwright');
 const nodemailer = require('nodemailer');
 const { exec } = require('child_process');
 const fs = require('fs');
+const https = require('https');
 const qrcode = require('qrcode-terminal');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 
 const client = new Client({
-    authStrategy: new LocalAuth()
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage', 
+            '--disable-gpu'
+        ]
+    }
 });
 
 client.on('qr', (qr) => {
@@ -22,13 +31,13 @@ client.on('ready', () => {
 client.initialize();
 
 // ==========================================
-// 1. CONFIGURAÇÕES
+// 1. CONFIGURAÇÕES testar: true
 // ==========================================
 const contas = [
-    { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: false},
-    { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com', recebeWhatsApp: true },
+    { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: false, testar: true},
+    { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com', recebeWhatsApp: true, testar: true },
     { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true },
-    { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', recebeWhatsApp: true },
+    { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', recebeWhatsApp: true, testar: true },
     { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: true, telefoneWhatsApp: '19995487421' },
     { nome: 'Devania', telefone: '19992509897', senha: 'Vixx140814', email: 'devaniaekaren@gmail.com', recebeWhatsApp: true },
     { nome: 'Daniel Prieto', telefone: '993940008', senha: 'DSP199s.', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
@@ -38,6 +47,18 @@ const configuracaoEmail = {
     usuario: 'patricksud96@gmail.com',
     senhaApp: 'wzbv amfm etxh zyyi'
 };
+
+// Captura erros fatais que não caíram no bloco try/catch
+process.on('uncaughtException', async (err) => {
+    console.error('\n🚨 ERRO FATAL IRRECUPERÁVEL DETECTADO 🚨\n', err);
+    try {
+        const numeroAdmin = '5519995487421@c.us';
+        await client.sendMessage(numeroAdmin, `🚨 *FALHA CRÍTICA NO SERVIDOR* 🚨\n\nO robô sofreu um erro fatal e foi encerrado abruptamente.\n\n*Detalhe técnico:*\n${err.message}`);
+    } catch (e) {}
+    
+    // Força o encerramento seguro após avisar
+    setTimeout(() => process.exit(1), 5000); 
+});
 
 // ==========================================
 // 2. FUNÇÃO PRINCIPAL DO ROBÔ
@@ -57,7 +78,15 @@ async function executarAutomacao() {
         console.log(`\n⚠️ MODO DE TESTE ATIVADO: Executando apenas ${contasDeTeste.length} conta(s).\n`);
     }
 
-    const browser = await chromium.launch({ headless: false });
+    const browser = await chromium.launch({ 
+        headless: false,
+        args: [
+            '--autoplay-policy=no-user-gesture-required', // Força o vídeo a rodar sozinho
+            '--disable-gpu', // Desativa a dependência de placa de vídeo do Windows
+            '--mute-audio', // Muta o áudio para evitar bugs de drivers de som
+            '--window-size=1280,720'
+        ]
+    });
 
     for (const conta of contasParaProcessar) {
         console.log(`\n--- Iniciando conta: ${conta.nome} (${conta.telefone}) ---`);
@@ -124,60 +153,62 @@ async function executarAutomacao() {
 
             let temTarefa = true;
             let contadorTarefas = 0;
+            let falhasConsecutivas = 0;
 
-            // O equivalente ao "Rótulo VerificarTarefas" e "Acessar VerificarTarefas"
             while (temTarefa) {
                 try {
-                    // Verifica se ainda existem tarefas (aguarda o botão 'Enviar' por 5s)
                     const botaoEnviar = page.locator('text="Enviar"').first();
                     await botaoEnviar.waitFor({ state: 'visible', timeout: 5000 });
 
                     console.log(`Processando tarefa #${contadorTarefas + 1}...`);
-
-                    // 1. Clicar em 'Enviar'
                     await botaoEnviar.click();
-                    console.log("  -> Clicou em 'Enviar'");
-
-                    // 2. Aguardar o modal de avaliação aparecer (radio de estrelas)
+                    
                     await page.getByRole('radio').nth(4).waitFor({ state: 'visible', timeout: 10000 });
-
-                    // 3. Selecionar 5 estrelas (radio index 4 = quinta opção = 5 estrelas)
                     await page.getByRole('radio').nth(4).click({ force: true });
-                    console.log("  -> Selecionou 5 estrelas");
-
-                    // 4. Aguardar 1 segundo para a seleção registrar
                     await page.waitForTimeout(1000);
-
-                    // 5. Clicar em 'Confirmar'
+                    
                     await page.locator('text="Confirmar"').first().click();
-                    console.log("  -> Clicou em 'Confirmar'");
-
-                    // 6. Aguardar 3 segundos antes de recomeçar o ciclo
                     await page.waitForTimeout(3000);
 
                     contadorTarefas++;
+                    falhasConsecutivas = 0; // Reseta o contador de erros se deu sucesso
                     console.log(`  -> Tarefa #${contadorTarefas} concluída com sucesso!`);
                 } catch (e) {
-                    // Se passar 3 segundos e ele não achar o botão "Enviar", cai aqui e sai do Loop
-                    console.log(`Fim das tarefas. Total realizado: ${contadorTarefas}`);
-                    temTarefa = false;
+                    falhasConsecutivas++;
+                    console.log(`⚠️ Falha na tarefa (Possível vídeo travado). Tentativa ${falhasConsecutivas} de 2.`);
+
+                    if (falhasConsecutivas >= 2) {
+                        console.log(`Fim das tarefas ou limite de erros atingido. Total: ${contadorTarefas}`);
+                        temTarefa = false;
+                    } else {
+                        console.log("Forçando retorno para a tela inicial para tentar novamente...");
+                        // Volta para a raiz do site para destravar da tela do vídeo
+                        await page.goto('https://sp4567.com/#/index'); 
+                        await page.waitForTimeout(4000);
+                        
+                        // Fecha possíveis comunicados que abrem ao voltar pra Home
+                        try { await page.locator('.close').first().click({ timeout: 2000, force: true }); } catch(err) {}
+                        
+                        // Clica na aba Tarefas de novo
+                        await page.click('text="Tarefa"');
+                        await page.waitForTimeout(3000);
+                    }
                 }
             }
 
             // ==========================================
             // 5. CAPTURAR O SALDO NA "MINHA ÁREA"
             // ==========================================
+            console.log("Navegando de volta para a Home para capturar o saldo...");
+            await page.goto('https://sp4567.com/#/index'); // Garante que sai da tela de vídeo
+            await page.waitForTimeout(4000);
 
-            // Recarrega a página para garantir que o saldo está atualizado após as tarefas
-            console.log("Recarregando a página para atualizar o saldo...");
-            await page.reload({ waitUntil: 'networkidle' });
-            await page.waitForTimeout(5000);
+            // Tenta fechar algum comunicado se aparecer
+            try { await page.locator('.close').first().click({ timeout: 2000, force: true }); } catch(err) {}
 
-            console.log("Indo para 'Minha área' para capturar saldo...");
+            console.log("Indo para 'Minha área'...");
             await page.click('text="Minha área"');
 
-            // Aguarda o rótulo "Carteira de Receita(BRL)" aparecer na tela
-            // O valor está numa tag <dd> (role=definition) logo após o <dt> com o rótulo
             await page.getByText('Carteira de Receita(BRL)').waitFor({ state: 'visible', timeout: 10000 });
 
             // Lê o valor do <dd> adjacente ao <dt> que contém o rótulo
@@ -252,6 +283,21 @@ async function executarAutomacao() {
         console.log("Relatório final enviado pelo WhatsApp com sucesso!");
     } catch (e) {
         console.error("Falha ao enviar relatório final pelo WhatsApp:", e.message);
+    }
+
+    // ==========================================
+    // 6.5. SINAL DE VIDA (HEALTHCHECKS)
+    // ==========================================
+    console.log("Enviando sinal de vida para o monitor de infraestrutura...");
+    try {
+        // Substitua pela SUA URL do Healthchecks
+        https.get('https://hc-ping.com/8f2163b8-0ff5-4acb-83ec-60960288a0d4', (res) => {
+            console.log(`Sinal de vida recebido pelo servidor. Status: ${res.statusCode}`);
+        }).on('error', (e) => {
+            console.error('Erro de rede ao pingar o Healthchecks:', e.message);
+        });
+    } catch (e) {
+        console.error("Falha ao executar o ping:", e.message);
     }
 
     // ==========================================
