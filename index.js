@@ -36,9 +36,9 @@ client.initialize();
 const contas = [
     { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: false},
     { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com', recebeWhatsApp: true},
-    { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true, testar: true},
+    { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true},
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', recebeWhatsApp: true},
-    { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: true, telefoneWhatsApp: '19995487421' },
+    { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: true, telefoneWhatsApp: '19995487421', testar: true},
     { nome: 'Devania', telefone: '19992509897', senha: 'Vixx140814', email: 'devaniaekaren@gmail.com', recebeWhatsApp: true },
     { nome: 'Daniel Prieto', telefone: '993940008', senha: 'DSP199s.', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
 ];
@@ -117,31 +117,52 @@ async function executarAutomacao() {
             // 3. VERIFICAR COMUNICADOS
             // ==========================================
 
-            console.log("Verificando se há comunicados na tela...");
+            console.log("Verificando se há comunicados especiais (Ver detalhes)...");
+            
+            // NOVO BLOCO: Trata o pop-up especial com atraso
+            try {
+                const botaoDetalhes = page.getByRole('button', { name: 'Ver detalhes' });
+                // Espera até 5 segundos para ver se esse aviso aparece
+                await botaoDetalhes.waitFor({ state: 'visible', timeout: 5000 });
+                
+                console.log("Aviso especial detectado! Clicando em 'Ver detalhes'...");
+                await botaoDetalhes.click();
+
+                console.log("Aguardando liberação do botão 'Voltar' (aprox. 10s)...");
+                const botaoVoltar = page.getByRole('button', { name: 'Voltar' });
+                // Colocamos 15s de timeout por segurança, já que o botão demora 10s para aparecer
+                await botaoVoltar.waitFor({ state: 'visible', timeout: 10000 });
+                await botaoVoltar.click();
+                
+                console.log("Retornou do aviso especial com sucesso.");
+                await page.waitForTimeout(2000); // Pausa para a tela estabilizar
+            } catch (e) {
+                console.log("Nenhum aviso especial encontrado. Seguindo...");
+            }
+
+            // BLOCO ORIGINAL: Fecha os comunicados em loop
+            console.log("Verificando se há comunicados normais na tela...");
             let comunicadosFechados = 0;
             // Loop: continua fechando enquanto houver botões '.close' visíveis
             while (true) {
                 try {
                     const botaoFechar = page.locator('.close').first();
                     await botaoFechar.waitFor({ state: 'visible', timeout: 4000 });
-                    // { force: true } necessário pois o botão é uma tag <i> (ícone),
-                    // que pode ter pointer-events: none e falhar nas checagens de acionabilidade.
                     await botaoFechar.click({ force: true });
                     comunicadosFechados++;
                     console.log(`Comunicado #${comunicadosFechados} fechado.`);
-                    // Pequena pausa para a animação de fechar terminar antes de checar o próximo
                     await page.waitForTimeout(1500);
                 } catch (e) {
-                    // Nenhum botão '.close' visível — todos os comunicados foram fechados
                     if (comunicadosFechados > 0) {
                         console.log(`Total de comunicados fechados: ${comunicadosFechados}. Seguindo...`);
                     } else {
-                        console.log("Nenhum comunicado encontrado. Seguindo...");
+                        console.log("Nenhum comunicado normal encontrado. Seguindo...");
                     }
                     break;
                 }
             }
 
+            
             // ==========================================
             // 4. ROTINA DE TAREFAS (SEU LOOP)
             // ==========================================
