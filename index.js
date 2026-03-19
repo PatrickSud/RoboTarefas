@@ -4,7 +4,7 @@ const nodemailer = require('nodemailer');
 const { exec } = require('child_process');
 const fs = require('fs');
 const https = require('https');
-const qrcode = require('qrcode-terminal');
+const qrcode = require('qrcode');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 
 const client = new Client({
@@ -19,8 +19,31 @@ const client = new Client({
     }
 });
 
-client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true });
+client.on('qr', async (qr) => {
+    try {
+        const qrBase64 = await qrcode.toDataURL(qr);
+        let transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: configuracaoEmail.usuario,
+                pass: configuracaoEmail.senhaApp
+            }
+        });
+
+        await transporter.sendMail({
+            from: `"Robô de Tarefas (Aviso)" <${configuracaoEmail.usuario}>`,
+            to: configuracaoEmail.usuario,
+            subject: 'Aviso: WhatsApp Desconectado - Leia o QR Code',
+            html: `
+                <h2>WhatsApp Desconectado!</h2>
+                <p>O robô perdeu a conexão com o WhatsApp. Por favor, leia o QR Code abaixo para reconectar:</p>
+                <img src="${qrBase64}" alt="QR Code WhatsApp" />
+            `
+        });
+        console.log('QR Code enviado por e-mail para reconexão.');
+    } catch (err) {
+        console.error('Falha ao gerar ou enviar o QR code por e-mail:', err);
+    }
 });
 
 client.on('ready', () => {
@@ -299,11 +322,17 @@ async function executarAutomacao() {
 
     console.log("Enviando relatório final via WhatsApp para o Administrador...");
     try {
-        const numeroAdmin = '5519995487421@c.us'; // O seu número configurado
-        await client.sendMessage(numeroAdmin, `*Relatório Diário (${dataHoje})*\n\n${relatorioFinal}`);
-        console.log("Relatório final enviado pelo WhatsApp com sucesso!");
+        const state = await client.getState();
+        if (state === 'CONNECTED') {
+            const numeroAdmin = '5519995487421@c.us'; // O seu número configurado
+            await client.sendMessage(numeroAdmin, `*Relatório Diário (${dataHoje})*\n\n${relatorioFinal}`);
+            console.log("Relatório final enviado pelo WhatsApp com sucesso!");
+        } else {
+            console.error(`Atenção: A conexão do WhatsApp não está pronta. Status atual: ${state}`);
+        }
     } catch (e) {
-        console.error("Falha ao enviar relatório final pelo WhatsApp:", e.message);
+        console.error("Falha ao enviar relatório final pelo WhatsApp:");
+        console.error(e);
     }
 
     // ==========================================
@@ -322,8 +351,11 @@ async function executarAutomacao() {
     }
 
     // ==========================================
-    // 7. FINALIZAÇÃO GRACIOSA
+    // 7. FINALIZAÇÃO
     // ==========================================
+    console.log('Aguardando 5 segundos para a rede processar as mensagens do WhatsApp...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
     console.log('\nFechando sessão do WhatsApp...');
     await client.destroy();
 
@@ -354,16 +386,27 @@ async function enviarEmail(conteudo, dataHoje) {
             }
         });
 
-        let info = await transporter.sendMail({
+        let opcoesEmail = {
             from: `"Robô de Ganhos" <${configuracaoEmail.usuario}>`,
             to: configuracaoEmail.usuario,
             subject: `Automação Concluída - Relatório de Contas (${dataHoje})`,
             text: conteudo
-        });
+        };
 
-        console.log("E-mail enviado com sucesso! ID:", info.messageId);
+        if (fs.existsSync('log_sistema.txt')) {
+            opcoesEmail.attachments = [
+                {
+                    filename: 'log_sistema.txt',
+                    path: './log_sistema.txt'
+                }
+            ];
+        }
+
+        let info = await transporter.sendMail(opcoesEmail);
+
+        console.log("E-mail final enviado com sucesso! ID:", info.messageId);
     } catch (erro) {
-        console.error("Falha ao enviar e-mail:", erro.message);
+        console.error("Falha ao enviar e-mail final:", erro.message);
     }
 }
 
