@@ -200,10 +200,21 @@ async function executarAutomacao() {
             let falhasConsecutivas = 0;
 
             while (temTarefa) {
+                // 1. Busca (Fim Natural)
+                let botaoEnviar;
                 try {
-                    const botaoEnviar = page.locator('text="Enviar"').first();
+                    botaoEnviar = page.locator('text="Enviar"').first();
                     await botaoEnviar.waitFor({ state: 'visible', timeout: 5000 });
+                } catch (e) {
+                    // Se não encontrou o botão "Enviar" após 5s, significa que as tarefas acabaram naturalmente
+                    console.log(`Fim natural das tarefas. Total concluído: ${contadorTarefas}`);
+                    temTarefa = false;
+                    falhasConsecutivas = 0;
+                    break;
+                }
 
+                // 2. Execução (Erro Real)
+                try {
                     console.log(`Processando tarefa #${contadorTarefas + 1}...`);
                     await botaoEnviar.click();
                     
@@ -218,12 +229,12 @@ async function executarAutomacao() {
                     falhasConsecutivas = 0; // Reseta o contador de erros se deu sucesso
                     console.log(`  -> Tarefa #${contadorTarefas} concluída com sucesso!`);
                 } catch (e) {
+                    // 3. Retentativa e Alarme
                     falhasConsecutivas++;
-                    console.log(`⚠️ Falha na tarefa (Possível vídeo travado). Tentativa ${falhasConsecutivas} de 2.`);
+                    console.log(`⚠️ Falha na execução da tarefa (Possível vídeo travado). Tentativa ${falhasConsecutivas} de 2.`);
 
                     if (falhasConsecutivas >= 2) {
-                        console.log(`Fim das tarefas ou limite de erros atingido. Total: ${contadorTarefas}`);
-                        temTarefa = false;
+                        throw new Error('Falha ao concluir a tarefa após 2 tentativas. Travamento detectado.');
                     } else {
                         console.log("Forçando retorno para a tela inicial para tentar novamente...");
                         // Volta para a raiz do site para destravar da tela do vídeo
@@ -238,6 +249,19 @@ async function executarAutomacao() {
                         await page.waitForTimeout(3000);
                     }
                 }
+            }
+
+            // ==========================================
+            // 4.5. CAPTURAR PRINT DE SUCESSO DAS TAREFAS
+            // ==========================================
+            let caminhoPrintSucesso = '';
+            try {
+                caminhoPrintSucesso = `sucesso_${conta.nome}.png`;
+                await page.screenshot({ path: caminhoPrintSucesso, fullPage: true });
+                console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`);
+            } catch (e) {
+                console.log('Não foi possível tirar o print da tela de sucesso.');
+                caminhoPrintSucesso = ''; // Garante que fica vazio se falhar
             }
 
             // ==========================================
@@ -271,7 +295,14 @@ async function executarAutomacao() {
             const numeroEnvio = conta.telefoneWhatsApp || conta.telefone;
             if (conta.recebeWhatsApp) {
                 console.log(`Preparando envio de WhatsApp de status para ${conta.nome}...`);
-                await enviarWhatsApp(numeroEnvio, conta.nome, carteiraReceita, contadorTarefas, dataHoje);
+                await enviarWhatsApp(numeroEnvio, conta.nome, carteiraReceita, contadorTarefas, dataHoje, caminhoPrintSucesso);
+            }
+
+            // 3. LIMPEZA DO PRINT DE SUCESSO
+            if (caminhoPrintSucesso && fs.existsSync(caminhoPrintSucesso)) {
+                try {
+                    fs.unlinkSync(caminhoPrintSucesso);
+                } catch(e) {}
             }
 
         } catch (erro) {
@@ -478,17 +509,12 @@ async function enviarEmailErro(emailDestino, nome, dataHoje, caminhoPrint) {
         await transporter.sendMail(opcoesEmail);
         console.log(` -> E-mail de ERRO com print enviado para ${nome} com sucesso!`);
 
-        // Limpeza: Apaga a imagem do servidor após o envio para não ocupar espaço
-        // if (caminhoPrint && fs.existsSync(caminhoPrint)) {
-        //     fs.unlinkSync(caminhoPrint);
-        // }
-
     } catch (erro) {
         console.error(` -> Falha ao enviar e-mail de erro para ${nome}:`, erro.message);
     }
 }
 
-async function enviarWhatsApp(numero, nome, saldo, qtdTarefas, dataHoje) {
+async function enviarWhatsApp(numero, nome, saldo, qtdTarefas, dataHoje, caminhoPrintSucesso) {
     try {
         const numeroDestino = `55${numero}@c.us`;
         let mensagem = '';
@@ -499,7 +525,12 @@ async function enviarWhatsApp(numero, nome, saldo, qtdTarefas, dataHoje) {
             mensagem = `Olá, ${nome}! ℹ️\nO robô acessou sua conta hoje (${dataHoje}), mas as tarefas já estavam concluídas.\nSaldo atual: ${saldo}`;
         }
 
-        await client.sendMessage(numeroDestino, mensagem);
+        if (caminhoPrintSucesso && fs.existsSync(caminhoPrintSucesso)) {
+            const media = MessageMedia.fromFilePath(caminhoPrintSucesso);
+            await client.sendMessage(numeroDestino, media, { caption: mensagem });
+        } else {
+            await client.sendMessage(numeroDestino, mensagem);
+        }
         console.log(` -> WhatsApp de status (Tarefas: ${qtdTarefas}) enviado para ${nome} com sucesso!`);
     } catch (erro) {
         console.error(` -> Falha ao enviar WhatsApp de status para ${nome}:`, erro.message);
