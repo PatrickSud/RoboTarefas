@@ -57,7 +57,7 @@ client.initialize();
 // 1. CONFIGURAÇÕES testar: true
 // ==========================================
 const contas = [
-    { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: true, telefoneWhatsApp: '19995487421', testar: true},
+    { nome: 'Jaqueline', telefone: '19971673522', senha: 'Pagy2015', recebeWhatsApp: true, telefoneWhatsApp: '19995487421'},
     { nome: 'Gonzalo', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true},
     { nome: 'Magaly', telefone: '19971691705', senha: 'Andrea1993_!', recebeWhatsApp: true},
     { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: true, telefoneWhatsApp: '19995487421'},
