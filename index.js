@@ -63,7 +63,7 @@ const contas = [
     { nome: 'Daniel', telefone: '19998185339', senha: '@bt3RWqUTy.qi', recebeWhatsApp: true, telefoneWhatsApp: '19995487421'},
     { nome: 'Karen', telefone: '19996722502', senha: 'Vixx140814', email: 'karensgodoy93@gmail.com', recebeWhatsApp: true},
     { nome: 'Devania', telefone: '19992509897', senha: 'Vixx140814', recebeWhatsApp: true },
-    { nome: 'Alvaro', telefone: '11948187041', senha: 'Vix140814', recebeWhatsApp: true },
+    { nome: 'Alvaro', telefone: '11948187041', senha: 'Vixx140814', recebeWhatsApp: true },
     { nome: 'Alvaro 2', telefone: '119481870411', senha: 'Vixx140814', recebeWhatsApp: true, telefoneWhatsApp: '11948187041' },
     { nome: 'Daniel Prieto', telefone: '993940008', senha: 'DSP199s.', recebeWhatsApp: true, telefoneWhatsApp: '19998185339' }
 ];
