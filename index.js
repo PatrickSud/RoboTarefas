@@ -177,22 +177,57 @@ async function executarAutomacao() {
                     try {
                         console.log(`Processando tarefa #${contadorTarefas + 1}...`);
                         await botaoEnviar.click();
-                        
+
                         console.log("Aguardando contagem regressiva de 8s + renderização...");
-                        await page.waitForTimeout(15000); // 8s da VLM + 2s de margem
+                        await page.waitForTimeout(15000); // 8s da VLM + margem
                         
                         const btnConfirmar = page.locator('button:has-text("Confirmar")').first();
                         await btnConfirmar.waitFor({ state: 'visible', timeout: 2000 });
                         await btnConfirmar.click({ force: true });
                         await page.waitForTimeout(1500);
                         
-                        const btnSucesso = page.locator('button:has-text("Confirmar")').first();
-                        await btnSucesso.waitFor({ state: 'visible', timeout: 5000 });
-                        await btnSucesso.click();
-                        await page.waitForTimeout(1000);
+                        // Verifica qual mensagem apareceu após confirmar as estrelas
+                        try {
+                            const msgLimite = page.locator('text="O número de vezes de hoje já foi usado"').first();
+                            if (await msgLimite.isVisible()) {
+                                console.log(`Fim das tarefas VLM atingido (Limite diário). Total concluído: ${contadorTarefas}`);
+                                temTarefa = false;
+                                falhasConsecutivas = 0;
+                                // Fecha o popup do limite e volta para a lista antes de tirar o print
+                                try { await page.locator('button:has-text("Confirmar")').first().click({ timeout: 2000 }); } catch(e) {}
+                                try { await page.locator('.van-nav-bar__left, i.van-icon-arrow-left').first().click({ timeout: 3000 }); } catch (e) { await page.goBack(); }
+                                await page.waitForTimeout(2000);
+                                break; 
+                            }
+                        } catch (e) {}
+
+                        // Se não foi limite, segue o jogo para a segunda confirmação de sucesso
+                        try {
+                            const btnSucesso = page.locator('button:has-text("Confirmar")').first();
+                            await btnSucesso.waitFor({ state: 'visible', timeout: 5000 });
+                            await btnSucesso.click({ force: true });
+                            await page.waitForTimeout(1000);
+                        } catch (e) {
+                            // Ignora se a segunda tela de confirmação não aparecer
+                        }
                         
-                        await page.locator('i.van-icon-arrow-left').click();
+                        try {
+                            // Tenta clicar no botão de voltar do próprio site (canto superior esquerdo)
+                            await page.locator('.van-nav-bar__left, i.van-icon-arrow-left').first().click({ timeout: 3000 });
+                        } catch (e) {
+                            // Falha silenciosa: a plataforma pode já ter voltado automaticamente
+                        }
                         await page.waitForTimeout(3000);
+                        
+                        // Sistema de recuperação: se voltou demais e caiu na Home, clica de volta para a lista
+                        try {
+                            const btnRecentes = page.locator('div:has-text("Imagens Mais Recentes")').first();
+                            if (await btnRecentes.isVisible()) {
+                                console.log("Retornou para a Home acidentalmente. Reabrindo a lista de tarefas...");
+                                await btnRecentes.click();
+                                await page.waitForTimeout(2000);
+                            }
+                        } catch(e) {}
 
                         contadorTarefas++;
                         falhasConsecutivas = 0;
