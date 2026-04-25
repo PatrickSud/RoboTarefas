@@ -62,7 +62,9 @@ client.initialize();
 // ==========================================
 const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
-    { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' }
+    { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
+    { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
+    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' }
 ];
 
 const configuracaoEmail = {
@@ -292,6 +294,206 @@ async function executarAutomacao() {
                 const carteiraTexto = await locSaldo.innerText();
                 carteiraReceita = carteiraTexto.replace(/[^0-9.,]/g, '').trim();
                 console.log(`Saldo capturado VLM: ${carteiraReceita}`);
+
+            } else if (conta.plataforma === 'Signet') {
+                // FLUXO SIGNET (NOVA PLATAFORMA)
+                console.log("Acessando tela de login Signet...");
+                await page.goto('https://m.signet-jewelers-br.top/#/login');
+                await page.waitForTimeout(3000);
+
+                console.log("Tentando preencher credenciais Signet...");
+                try {
+                    // Tenta preencher os dois primeiros inputs da tela (geralmente telefone e senha nessas plataformas)
+                    const inputs = page.locator('input');
+                    if (await inputs.count() >= 2) {
+                        await inputs.nth(0).fill(conta.telefone);
+                        await inputs.nth(1).fill(conta.senha);
+                    }
+                    await page.waitForTimeout(1000);
+                    
+                    // Tenta clicar no botão de login
+                    const botoes = page.locator('button');
+                    if (await botoes.count() > 0) {
+                        await botoes.first().click();
+                    }
+                    await page.waitForTimeout(3000);
+                } catch (e) {
+                    console.log("Aviso: Não foi possível preencher o login automaticamente. Faça manualmente.");
+                }
+
+                // Fechar comunicados
+                console.log("Verificando comunicados...");
+                try {
+                    const btnConfirmar = page.getByRole('button', { name: 'Confirmar' });
+                    await btnConfirmar.waitFor({ state: 'visible', timeout: 5000 });
+                    await btnConfirmar.click();
+                    await page.waitForTimeout(1000);
+                } catch(e) {
+                    console.log("Nenhum comunicado encontrado.");
+                }
+
+                // Check-in (Entrar)
+                console.log("Acessando tela de 'Entrar'...");
+                try {
+                    await page.getByText('Entrar').first().click({ timeout: 5000 });
+                    await page.waitForTimeout(2000);
+                    
+                    console.log("Coletando recompensa diária (Entrar na section)...");
+                    await page.locator('section').getByText('Entrar').first().click({ timeout: 5000 });
+                    await page.waitForTimeout(2000);
+                    
+                    console.log("Voltando para a tela principal...");
+                    await page.locator('i').first().click({ timeout: 3000 });
+                    await page.waitForTimeout(2000);
+                } catch(e) {
+                    console.log("Aviso: Falha na etapa de Entrar/Check-in diário. Talvez já tenha sido feito.");
+                }
+
+                // Receber Renda (Tarefas)
+                console.log("Indo para o menu de perfil...");
+                try {
+                    await page.locator('div:nth-child(5) > .van-badge__wrapper > .w-24').first().click({ timeout: 5000 });
+                    await page.waitForTimeout(3000);
+
+                    console.log("Acessando 'Receber Renda'...");
+                    await page.getByText('Receber Renda').first().click({ timeout: 5000 });
+                    await page.waitForTimeout(3000);
+
+                    let recebendo = true;
+                    while (recebendo) {
+                        try {
+                            const btnReceived = page.getByRole('button', { name: 'Received' }).first();
+                            await btnReceived.waitFor({ state: 'visible', timeout: 3000 });
+                            await btnReceived.click();
+                            contadorTarefas++;
+                            console.log(`  -> Renda #${contadorTarefas} recebida com sucesso!`);
+                            await page.waitForTimeout(2000);
+                        } catch(e) {
+                            console.log("Fim das rendas disponíveis.");
+                            recebendo = false;
+                        }
+                    }
+
+                    console.log("Voltando para o perfil...");
+                    await page.locator('i').first().click({ timeout: 3000 });
+                    await page.waitForTimeout(3000);
+
+                    console.log("Capturando saldo...");
+                    try {
+                        const bodyText = await page.innerText('body');
+                        const match = bodyText.match(/([\d.,]+)\s*Carteira da Equipe/i);
+                        if (match && match[1]) {
+                            carteiraReceita = match[1];
+                        } else {
+                            const locSaldo = page.locator(':has-text("Carteira da Equipe")').last();
+                            const texto = await locSaldo.innerText();
+                            carteiraReceita = texto.replace(/[^0-9.,]/g, '').trim();
+                        }
+                        console.log(`Saldo capturado Signet: ${carteiraReceita}`);
+                    } catch(e) {
+                        console.log("Não foi possível capturar o saldo:", e.message);
+                    }
+
+                } catch(e) {
+                    console.log("Falha na rotina de perfil (Receber Renda).", e.message);
+                }
+
+                try {
+                    caminhoPrintSucesso = `sucesso_${conta.nome}.png`;
+                    await page.screenshot({ path: caminhoPrintSucesso, fullPage: true });
+                    console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`);
+                } catch (e) {
+                    caminhoPrintSucesso = ''; 
+                }
+
+            } else if (conta.plataforma === 'GKWind') {
+                // FLUXO GK WIND
+                console.log("Acessando tela de login GK Wind...");
+                await page.goto('https://gkwindbr.com/login/');
+                await page.waitForTimeout(3000);
+
+                console.log("Preenchendo credenciais GK Wind...");
+                try {
+                    const inputs = page.locator('input');
+                    if (await inputs.count() >= 2) {
+                        await inputs.nth(0).fill(conta.telefone);
+                        await inputs.nth(1).fill(conta.senha);
+                    }
+                    await page.waitForTimeout(1000);
+                    
+                    await page.getByRole('button', { name: 'Entrar' }).first().click({ timeout: 5000 });
+                    await page.waitForTimeout(4000);
+                } catch (e) {
+                    console.log("Aviso: Falha no login automático GK Wind.");
+                }
+
+                console.log("Fechando comunicados...");
+                try {
+                    // Usando o seletor exato encontrado no DOM
+                    const btnFechar = page.getByRole('button', { name: 'Fechar' });
+                    await btnFechar.waitFor({ state: 'visible', timeout: 6000 });
+                    await btnFechar.click();
+                    await page.waitForTimeout(1500);
+                } catch(e) {
+                    console.log("Nenhum comunicado encontrado ou já fechado.");
+                }
+
+                console.log("Acessando Check-in Diário...");
+                try {
+                    await page.getByText(/Check-in Diário/i).first().click({ timeout: 5000 });
+                    await page.waitForTimeout(2000);
+
+                    console.log("Fazendo check-in agora...");
+                    await page.getByRole('button', { name: /Fazer Check-in Agora/i }).first().click({ timeout: 5000 });
+                    await page.waitForTimeout(2000);
+                    
+                    // Lidar com o popup de sucesso após o check-in
+                    try {
+                        await page.getByRole('button', { name: 'Confirmar' }).first().click({ timeout: 3000 });
+                        await page.waitForTimeout(1000);
+                    } catch(e) {}
+                    
+                    contadorTarefas++;
+                    console.log("  -> Check-in realizado com sucesso!");
+                } catch(e) {
+                    console.log("Aviso: Falha na etapa de Check-in. Talvez já tenha sido feito.");
+                }
+
+                console.log("Acessando Perfil...");
+                try {
+                    try {
+                        await page.getByText('Perfil').first().click({ timeout: 3000 });
+                    } catch (e) {
+                        console.log("Tentando voltar para acessar o Perfil...");
+                        try { await page.locator('i').first().click({ timeout: 2000 }); } catch(err) { await page.goBack(); }
+                        await page.waitForTimeout(2000);
+                        await page.getByText('Perfil').first().click({ timeout: 5000 });
+                    }
+                    await page.waitForTimeout(3000);
+
+                    console.log("Capturando Saldo Total...");
+                    const bodyText = await page.innerText('body');
+                    // Tenta capturar "123.45 Saldo Total" ou "Saldo Total: 123.45"
+                    const match = bodyText.match(/([\d.,]+)\s*Saldo Total|Saldo Total[\s:R$]*([\d.,]+)/i);
+                    if (match) {
+                        carteiraReceita = match[1] || match[2];
+                    } else {
+                        const locSaldo = page.locator('div:has-text("Saldo Total")').last();
+                        const texto = await locSaldo.innerText();
+                        carteiraReceita = texto.replace(/[^0-9.,]/g, '').trim();
+                    }
+                    console.log(`Saldo capturado GK Wind: ${carteiraReceita}`);
+                } catch(e) {
+                    console.log("Falha ao acessar Perfil ou capturar Saldo.", e.message);
+                }
+
+                try {
+                    caminhoPrintSucesso = `sucesso_${conta.nome}.png`;
+                    await page.screenshot({ path: caminhoPrintSucesso, fullPage: true });
+                    console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`);
+                } catch (e) {
+                    caminhoPrintSucesso = ''; 
+                }
 
             } else {
                 // FLUXO ROYAL AURUM
@@ -615,7 +817,7 @@ async function enviarEmailIndividual(emailDestino, nome, saldo, qtdTarefas, data
 
         let assunto = '';
         let conteudo = '';
-        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : 'Royal Aurum';
+        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : (plataforma === 'Signet' ? 'Signet' : (plataforma === 'GKWind' ? 'GK Wind' : 'Royal Aurum'));
 
         // Verifica se fez tarefas ou se já estavam concluídas
         if (qtdTarefas > 0) {
@@ -681,7 +883,7 @@ async function enviarWhatsApp(numero, nome, saldo, qtdTarefas, dataHoje, caminho
     try {
         const numeroDestino = `55${numero}@c.us`;
         let mensagem = '';
-        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : 'Royal Aurum';
+        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : (plataforma === 'Signet' ? 'Signet' : (plataforma === 'GKWind' ? 'GK Wind' : 'Royal Aurum'));
 
         if (qtdTarefas > 0) {
             mensagem = `Olá, ${nome}! ✅\nO robô concluiu ${qtdTarefas} tarefa(s) na plataforma *${nomePlataforma}* com sucesso hoje (${dataHoje}).\nSaldo atualizado: ${saldo}`;
