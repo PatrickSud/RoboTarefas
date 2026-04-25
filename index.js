@@ -62,7 +62,7 @@ client.initialize();
 // ==========================================
 const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
-    { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', testar: true }
+    { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' }
 ];
 
 const configuracaoEmail = {
@@ -228,11 +228,14 @@ async function executarAutomacao() {
                         
                         // Sistema de recuperação: se voltou demais e caiu na Home, clica de volta para a lista
                         try {
-                            const btnRecentes = page.getByText('Imagens Mais Recentes').first();
-                            if (await btnRecentes.isVisible()) {
-                                console.log("Retornou para a Home acidentalmente. Reabrindo a lista de tarefas...");
-                                await btnRecentes.click();
-                                await page.waitForTimeout(2000);
+                            const btnListaFinal = page.locator('button:has-text("Ver classificação")').first();
+                            if (!(await btnListaFinal.isVisible())) {
+                                const btnRecentes = page.getByText('Imagens Mais Recentes').first();
+                                if (await btnRecentes.isVisible()) {
+                                    console.log("Garantindo abertura da lista de tarefas...");
+                                    await btnRecentes.click();
+                                    await page.waitForTimeout(2000);
+                                }
                             }
                         } catch(e) {}
 
