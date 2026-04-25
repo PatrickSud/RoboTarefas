@@ -64,7 +64,7 @@ const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
     { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
     { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
-    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' }
+    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind', testar: true }
 ];
 
 const configuracaoEmail = {
@@ -427,15 +427,28 @@ async function executarAutomacao() {
                     console.log("Aviso: Falha no login automático GK Wind.");
                 }
 
+                console.log("Aguardando 4 segundos para que o comunicado seja apresentado...");
+                await page.waitForTimeout(4000);
+
                 console.log("Fechando comunicados...");
                 try {
-                    // Usando o seletor exato encontrado no DOM
+                    // Clicando bem na borda do botão para não ativar banners ou links acidentalmente
                     const btnFechar = page.getByRole('button', { name: 'Fechar' });
                     await btnFechar.waitFor({ state: 'visible', timeout: 6000 });
-                    await btnFechar.click();
+                    await btnFechar.click({ position: { x: 2, y: 2 } }); 
                     await page.waitForTimeout(1500);
                 } catch(e) {
                     console.log("Nenhum comunicado encontrado ou já fechado.");
+                }
+
+                // DEFESA: Se ele foi para uma página em branco ou artigo por clique acidental, nós forçamos a volta
+                try {
+                    await page.getByText(/Check-in Diário/i).first().waitFor({ state: 'visible', timeout: 3000 });
+                } catch (e) {
+                    console.log("Redirecionamento acidental detectado! Forçando retorno para a página inicial...");
+                    await page.goto('https://gkwindbr.com/');
+                    await page.waitForTimeout(4000);
+                    try { await page.getByRole('button', { name: 'Fechar' }).click({ timeout: 2000 }); } catch(err) {}
                 }
 
                 console.log("Acessando Check-in Diário...");
@@ -444,17 +457,21 @@ async function executarAutomacao() {
                     await page.waitForTimeout(2000);
 
                     console.log("Fazendo check-in agora...");
-                    await page.getByRole('button', { name: /Fazer Check-in Agora/i }).first().click({ timeout: 5000 });
-                    await page.waitForTimeout(2000);
-                    
-                    // Lidar com o popup de sucesso após o check-in
-                    try {
-                        await page.getByRole('button', { name: 'Confirmar' }).first().click({ timeout: 3000 });
-                        await page.waitForTimeout(1000);
-                    } catch(e) {}
-                    
-                    contadorTarefas++;
-                    console.log("  -> Check-in realizado com sucesso!");
+                    const btnCheckin = page.getByRole('button', { name: /Fazer Check-in Agora/i }).first();
+                    if (await btnCheckin.isVisible()) {
+                        await btnCheckin.click({ timeout: 5000 });
+                        await page.waitForTimeout(2000);
+                        
+                        try {
+                            await page.getByRole('button', { name: 'Confirmar' }).first().click({ timeout: 3000 });
+                            await page.waitForTimeout(1000);
+                        } catch(e) {}
+                        
+                        contadorTarefas++;
+                        console.log("  -> Check-in realizado com sucesso!");
+                    } else {
+                        console.log("  -> Botão de check-in não encontrado. Provavelmente já feito hoje.");
+                    }
                 } catch(e) {
                     console.log("Aviso: Falha na etapa de Check-in. Talvez já tenha sido feito.");
                 }
@@ -462,25 +479,25 @@ async function executarAutomacao() {
                 console.log("Acessando Perfil...");
                 try {
                     try {
-                        await page.getByText('Perfil').first().click({ timeout: 3000 });
+                        // Tentando como 'link' que é muito mais preciso para abas inferiores
+                        await page.getByRole('link', { name: 'Perfil' }).first().click({ timeout: 4000 });
                     } catch (e) {
                         console.log("Tentando voltar para acessar o Perfil...");
                         try { await page.locator('i').first().click({ timeout: 2000 }); } catch(err) { await page.goBack(); }
                         await page.waitForTimeout(2000);
-                        await page.getByText('Perfil').first().click({ timeout: 5000 });
+                        await page.getByRole('link', { name: 'Perfil' }).first().click({ timeout: 5000 });
                     }
                     await page.waitForTimeout(3000);
 
                     console.log("Capturando Saldo Total...");
                     const bodyText = await page.innerText('body');
-                    // Tenta capturar "123.45 Saldo Total" ou "Saldo Total: 123.45"
                     const match = bodyText.match(/([\d.,]+)\s*Saldo Total|Saldo Total[\s:R$]*([\d.,]+)/i);
                     if (match) {
                         carteiraReceita = match[1] || match[2];
                     } else {
-                        const locSaldo = page.locator('div:has-text("Saldo Total")').last();
-                        const texto = await locSaldo.innerText();
-                        carteiraReceita = texto.replace(/[^0-9.,]/g, '').trim();
+                        // Fallback que busca o elemento irmão
+                        const saldoTxt = await page.locator('div').filter({ hasText: /^Saldo Total$/ }).locator('xpath=preceding-sibling::div').innerText();
+                        carteiraReceita = saldoTxt.replace(/[^0-9.,]/g, '').trim();
                     }
                     console.log(`Saldo capturado GK Wind: ${carteiraReceita}`);
                 } catch(e) {
