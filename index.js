@@ -156,7 +156,7 @@ async function executarAutomacao() {
                     await page.waitForTimeout(1000);
                 } catch(e) {}
 
-                await page.click('div:has-text("Imagens Mais Recentes")');
+                await page.getByText('Imagens Mais Recentes').first().click();
                 await page.waitForTimeout(3000);
 
                 let temTarefa = true;
@@ -181,7 +181,7 @@ async function executarAutomacao() {
                         console.log("Aguardando contagem regressiva de 8s + renderização...");
                         await page.waitForTimeout(15000); // 8s da VLM + margem
                         
-                        const btnConfirmar = page.locator('button:has-text("Confirmar")').first();
+                        const btnConfirmar = page.locator('button:has-text("Confirmar"):visible').last();
                         await btnConfirmar.waitFor({ state: 'visible', timeout: 2000 });
                         await btnConfirmar.click({ force: true });
                         await page.waitForTimeout(1500);
@@ -194,7 +194,7 @@ async function executarAutomacao() {
                                 temTarefa = false;
                                 falhasConsecutivas = 0;
                                 // Fecha o popup do limite e volta para a lista antes de tirar o print
-                                try { await page.locator('button:has-text("Confirmar")').first().click({ timeout: 2000 }); } catch(e) {}
+                                try { await page.locator('button:has-text("Confirmar"):visible').last().click({ timeout: 2000 }); } catch(e) {}
                                 try { await page.locator('.van-nav-bar__left, i.van-icon-arrow-left').first().click({ timeout: 3000 }); } catch (e) { await page.goBack(); }
                                 await page.waitForTimeout(2000);
                                 break; 
@@ -203,8 +203,12 @@ async function executarAutomacao() {
 
                         // Se não foi limite, segue o jogo para a segunda confirmação de sucesso
                         try {
-                            const btnSucesso = page.locator('button:has-text("Confirmar")').first();
-                            await btnSucesso.waitFor({ state: 'visible', timeout: 5000 });
+                            // Aguarda a confirmação de que o valor foi recebido
+                            const lblSucesso = page.getByText('Valor recebido com sucesso');
+                            await lblSucesso.waitFor({ state: 'visible', timeout: 5000 });
+
+                            // Clica no botão Confirmar correspondente
+                            const btnSucesso = page.getByRole('button', { name: 'Confirmar' });
                             await btnSucesso.click({ force: true });
                             await page.waitForTimeout(1000);
                         } catch (e) {
@@ -212,16 +216,19 @@ async function executarAutomacao() {
                         }
                         
                         try {
-                            // Tenta clicar no botão de voltar do próprio site (canto superior esquerdo)
-                            await page.locator('.van-nav-bar__left, i.van-icon-arrow-left').first().click({ timeout: 3000 });
+                            // Verifica se "Ver classificação" já está na tela. Se estiver, significa que o Confirmar já nos trouxe de volta!
+                            const btnLista = page.locator('button:has-text("Ver classificação")').first();
+                            if (!(await btnLista.isVisible())) {
+                                await page.locator('i').first().click({ timeout: 3000 });
+                            }
                         } catch (e) {
-                            // Falha silenciosa: a plataforma pode já ter voltado automaticamente
+                            // Falha silenciosa
                         }
                         await page.waitForTimeout(3000);
                         
                         // Sistema de recuperação: se voltou demais e caiu na Home, clica de volta para a lista
                         try {
-                            const btnRecentes = page.locator('div:has-text("Imagens Mais Recentes")').first();
+                            const btnRecentes = page.getByText('Imagens Mais Recentes').first();
                             if (await btnRecentes.isVisible()) {
                                 console.log("Retornou para a Home acidentalmente. Reabrindo a lista de tarefas...");
                                 await btnRecentes.click();
