@@ -64,7 +64,7 @@ const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
     { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
     { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
-    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind', testar: true }
+    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind'}
 ];
 
 const configuracaoEmail = {
