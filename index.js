@@ -64,7 +64,7 @@ const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
     { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
     { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
-    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind'}
+    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' }
 ];
 
 const configuracaoEmail = {
@@ -332,21 +332,27 @@ async function executarAutomacao() {
                     console.log("Nenhum comunicado encontrado.");
                 }
 
-                // Check-in (Entrar)
-                console.log("Acessando tela de 'Entrar'...");
+                // Check-in Diário (Signet)
+                console.log("Acessando tela de Check-in diário Signet...");
                 try {
-                    await page.getByText('Entrar').first().click({ timeout: 5000 });
-                    await page.waitForTimeout(2000);
-                    
-                    console.log("Coletando recompensa diária (Entrar na section)...");
-                    await page.locator('section').getByText('Entrar').first().click({ timeout: 5000 });
-                    await page.waitForTimeout(2000);
-                    
+                    await page.goto('https://m.signet-jewelers-br.top/#/SignIn');
+                    await page.waitForTimeout(3000);
+
+                    const btnEntrar = page.locator('button').filter({ hasText: /^Entrar$/ }).first();
+                    if (await btnEntrar.isVisible({ timeout: 5000 })) {
+                        await btnEntrar.click();
+                        contadorTarefas++;
+                        console.log("  -> Check-in Signet realizado com sucesso!");
+                        await page.waitForTimeout(2000);
+                    } else {
+                        console.log("  -> Botão 'Entrar' não encontrado. Check-in já pode ter sido feito hoje.");
+                    }
+
                     console.log("Voltando para a tela principal...");
-                    await page.locator('i').first().click({ timeout: 3000 });
+                    try { await page.locator('i.van-icon-arrow-left, .van-nav-bar__left').first().click({ timeout: 3000 }); } catch(e) { await page.goBack(); }
                     await page.waitForTimeout(2000);
                 } catch(e) {
-                    console.log("Aviso: Falha na etapa de Entrar/Check-in diário. Talvez já tenha sido feito.");
+                    console.log("Aviso: Falha no check-in diário Signet:", e.message);
                 }
 
                 // Receber Renda (Tarefas)
@@ -451,29 +457,27 @@ async function executarAutomacao() {
                     try { await page.getByRole('button', { name: 'Fechar' }).click({ timeout: 2000 }); } catch(err) {}
                 }
 
-                console.log("Acessando Check-in Diário...");
+                console.log("Acessando Check-in Diário GK Wind...");
                 try {
-                    await page.getByText(/Check-in Diário/i).first().click({ timeout: 5000 });
-                    await page.waitForTimeout(2000);
+                    await page.goto('https://gkwindbr.com/checkin/');
+                    await page.waitForTimeout(3000);
 
-                    console.log("Fazendo check-in agora...");
-                    const btnCheckin = page.getByRole('button', { name: /Fazer Check-in Agora/i }).first();
-                    if (await btnCheckin.isVisible()) {
-                        await btnCheckin.click({ timeout: 5000 });
+                    console.log("Tentando clicar no botão 'Fazer Check-in Agora'...");
+                    const btnCheckin = page.getByRole('button', { name: 'Fazer Check-in Agora' }).first();
+                    if (await btnCheckin.isVisible({ timeout: 5000 })) {
+                        await btnCheckin.click();
                         await page.waitForTimeout(2000);
-                        
                         try {
-                            await page.getByRole('button', { name: 'Confirmar' }).first().click({ timeout: 3000 });
+                            await page.getByRole('button', { name: /Confirmar/i }).first().click({ timeout: 3000 });
                             await page.waitForTimeout(1000);
                         } catch(e) {}
-                        
                         contadorTarefas++;
-                        console.log("  -> Check-in realizado com sucesso!");
+                        console.log("  -> Check-in GK Wind realizado com sucesso!");
                     } else {
-                        console.log("  -> Botão de check-in não encontrado. Provavelmente já feito hoje.");
+                        console.log("  -> Botão de check-in não visível. Provavelmente já feito hoje.");
                     }
                 } catch(e) {
-                    console.log("Aviso: Falha na etapa de Check-in. Talvez já tenha sido feito.");
+                    console.log("Aviso: Falha na etapa de Check-in GK Wind:", e.message);
                 }
 
                 console.log("Acessando Perfil...");
