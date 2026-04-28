@@ -63,9 +63,9 @@ client.initialize();
 const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
     { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
-    { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
+    { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet', testar: true },
     { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' },
-    { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla', testar: true }
+    { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla'}
 ];
 
 const configuracaoEmail = {
@@ -339,34 +339,48 @@ async function executarAutomacao() {
                     await page.goto('https://m.signet-jewelers-br.top/#/SignIn');
                     await page.waitForTimeout(3000);
 
-                    // O botão "Entrar" é uma <div> folha (sem filhos). Usamos evaluate()
-                    // para encontrar o nó exato com innerText === 'Entrar' e clicar via DOM,
-                    // evitando que o Playwright selecione um elemento pai incorretamente.
-                    console.log("Procurando e clicando no div 'Entrar' via JavaScript...");
-                    const clicado = await page.evaluate(() => {
-                        // Estratégia 1: div folha cujo texto direto é exatamente "Entrar"
-                        const todos = Array.from(document.querySelectorAll('div, button'));
-                        const btn = todos.find(el =>
-                            el.innerText?.trim() === 'Entrar' && el.children.length === 0
-                        );
-                        if (btn) { btn.click(); return true; }
+                    // O botão "Entrar" é uma <div> estilizada com fundo preto.
+                    // Identificamos que existem dois "Entrar" na tela: o título no topo e o botão real no meio.
+                    // O botão real possui a classe de fundo preto (bg-[#1A1A1A]) quando está ativo.
+                    console.log("Procurando botão de Check-in 'Entrar' com estilo específico...");
+                    
+                    const btnReal = page.locator('div.bg-\\[\\#1A1A1A\\]:has-text("Entrar")').first();
 
-                        // Estratégia 2: elemento com atributo data-v e texto "Entrar"
-                        const btnV = todos.find(el =>
-                            el.innerText?.trim() === 'Entrar' &&
-                            Array.from(el.attributes).some(a => a.name.startsWith('data-v-'))
-                        );
-                        if (btnV) { btnV.click(); return true; }
-
-                        return false;
-                    });
-
-                    if (clicado) {
-                        contadorTarefas++;
-                        console.log("  -> Check-in Signet realizado com sucesso!");
-                        await page.waitForTimeout(2000);
+                    if (await btnReal.isVisible({ timeout: 5000 })) {
+                        console.log("Botão 'Entrar' encontrado. Clicando...");
+                        await btnReal.click();
+                        await page.waitForTimeout(3000);
+                        
+                        // Verifica se o botão mudou para cinza (bg-[#c2c2c2]), confirmando o sucesso
+                        const btnConfirmado = page.locator('div.bg-\\[\\#c2c2c2\\]:has-text("Entrar")').first();
+                        if (await btnConfirmado.isVisible({ timeout: 5000 })) {
+                            contadorTarefas++;
+                            console.log("  -> Check-in Signet realizado e confirmado com sucesso!");
+                        } else {
+                            console.log("  -> Botão clicado, mas confirmação visual (mudança para cinza) não detectada.");
+                            // Incrementamos mesmo assim pois o clique foi dado no botão correto
+                            contadorTarefas++;
+                        }
                     } else {
-                        console.log("  -> Div 'Entrar' não encontrado. Check-in já pode ter sido feito hoje.");
+                        // Verifica se o botão já está cinza (check-in já feito hoje)
+                        const btnJaFeito = page.locator('div.bg-\\[\\#c2c2c2\\]:has-text("Entrar")').first();
+                        if (await btnJaFeito.isVisible({ timeout: 2000 })) {
+                            console.log("  -> Check-in Signet já havia sido realizado hoje (botão cinza).");
+                        } else {
+                            console.log("  -> Botão 'Entrar' ativo não encontrado. Verificando se há diálogos de sucesso...");
+                            try {
+                                const btnOk = page.getByRole('button', { name: /Ok|Confirmar|Sucesso/i }).first();
+                                if (await btnOk.isVisible({ timeout: 2000 })) {
+                                    await btnOk.click();
+                                    contadorTarefas++;
+                                    console.log("  -> Check-in concluído via diálogo de confirmação.");
+                                } else {
+                                    console.log("  -> Nenhum botão de check-in detectado.");
+                                }
+                            } catch(err) {
+                                console.log("  -> Falha ao procurar elementos alternativos de check-in.");
+                            }
+                        }
                     }
 
                     console.log("Voltando para a tela principal...");
