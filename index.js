@@ -64,7 +64,8 @@ const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
     { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
     { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
-    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' }
+    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' },
+    { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla', testar: true }
 ];
 
 const configuracaoEmail = {
@@ -338,14 +339,34 @@ async function executarAutomacao() {
                     await page.goto('https://m.signet-jewelers-br.top/#/SignIn');
                     await page.waitForTimeout(3000);
 
-                    const btnEntrar = page.locator('button').filter({ hasText: /^Entrar$/ }).first();
-                    if (await btnEntrar.isVisible({ timeout: 5000 })) {
-                        await btnEntrar.click();
+                    // O botão "Entrar" é uma <div> folha (sem filhos). Usamos evaluate()
+                    // para encontrar o nó exato com innerText === 'Entrar' e clicar via DOM,
+                    // evitando que o Playwright selecione um elemento pai incorretamente.
+                    console.log("Procurando e clicando no div 'Entrar' via JavaScript...");
+                    const clicado = await page.evaluate(() => {
+                        // Estratégia 1: div folha cujo texto direto é exatamente "Entrar"
+                        const todos = Array.from(document.querySelectorAll('div, button'));
+                        const btn = todos.find(el =>
+                            el.innerText?.trim() === 'Entrar' && el.children.length === 0
+                        );
+                        if (btn) { btn.click(); return true; }
+
+                        // Estratégia 2: elemento com atributo data-v e texto "Entrar"
+                        const btnV = todos.find(el =>
+                            el.innerText?.trim() === 'Entrar' &&
+                            Array.from(el.attributes).some(a => a.name.startsWith('data-v-'))
+                        );
+                        if (btnV) { btnV.click(); return true; }
+
+                        return false;
+                    });
+
+                    if (clicado) {
                         contadorTarefas++;
                         console.log("  -> Check-in Signet realizado com sucesso!");
                         await page.waitForTimeout(2000);
                     } else {
-                        console.log("  -> Botão 'Entrar' não encontrado. Check-in já pode ter sido feito hoje.");
+                        console.log("  -> Div 'Entrar' não encontrado. Check-in já pode ter sido feito hoje.");
                     }
 
                     console.log("Voltando para a tela principal...");
@@ -514,6 +535,103 @@ async function executarAutomacao() {
                     console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`);
                 } catch (e) {
                     caminhoPrintSucesso = ''; 
+                }
+
+            } else if (conta.plataforma === 'Arla') {
+                // FLUXO ARLA
+                console.log("Acessando tela de login Arla...");
+                await page.goto('https://arlavt.com/m/login');
+                await page.waitForTimeout(3000);
+
+                console.log("Preenchendo credenciais Arla...");
+                try {
+                    const inputs = page.locator('input');
+                    if (await inputs.count() >= 2) {
+                        await inputs.nth(0).fill(conta.telefone);
+                        await inputs.nth(1).fill(conta.senha);
+                    }
+                    await page.waitForTimeout(1000);
+                    
+                    const btnLogin = page.locator('button:has-text("Entrar"), button:has-text("Login"), .van-button').first();
+                    await btnLogin.click();
+                    await page.waitForTimeout(5000);
+                } catch (e) {
+                    console.log("Aviso: Falha no preenchimento de login Arla.");
+                }
+
+                // 1. Fechar comunicados
+                try {
+                    const btnConfirme = page.getByRole('button', { name: 'confirme' });
+                    if (await btnConfirme.isVisible({ timeout: 5000 })) {
+                        await btnConfirme.click();
+                        await page.waitForTimeout(1000);
+                    }
+                } catch (e) {}
+
+                // 2. Menu Fazenda e Alimentação
+                try {
+                    console.log("Indo para Fazenda...");
+                    await page.getByText('fazenda').click();
+                    await page.waitForTimeout(3000);
+
+                    console.log("Clicando em Alimentação (1)...");
+                    await page.getByRole('button', { name: 'Alimentação' }).first().click();
+                    await page.waitForTimeout(3000);
+
+                    console.log("Clicando em Alimentação (2)...");
+                    await page.getByRole('button', { name: 'Alimentação' }).first().click();
+                    await page.waitForTimeout(3000);
+                    
+                    console.log("Confirmando ação de alimentação...");
+                    await page.getByRole('button', { name: 'confirme' }).click();
+                    await page.waitForTimeout(2000);
+
+                    contadorTarefas++;
+                    console.log("  -> Tarefa de Alimentação concluída!");
+                } catch (e) {
+                    console.log("Aviso: Falha na tarefa de Alimentação Arla:", e.message);
+                }
+
+                // 3. Check-in Diário
+                try {
+                    console.log("Indo para o perfil via URL...");
+                    await page.goto('https://arlavt.com/m/user/index');
+                    await page.waitForTimeout(3000);
+
+                    console.log("Acessando área de Check-in...");
+                    await page.getByRole('button', { name: 'Faça login' }).click();
+                    await page.waitForTimeout(3000);
+
+                    console.log("Realizando Check-in...");
+                    await page.getByRole('button', { name: 'Clique para fazer login' }).click();
+                    await page.waitForTimeout(3000);
+                    contadorTarefas++;
+                    console.log("  -> Check-in realizado!");
+                } catch (e) {
+                    console.log("Aviso: Falha no Check-in Arla:", e.message);
+                }
+
+                // 4. Captura de Saldo e Print
+                try {
+                    console.log("Acessando o perfil via URL para capturar saldo...");
+                    await page.goto('https://arlavt.com/m/user/index');
+                    await page.waitForTimeout(4000);
+
+                    caminhoPrintSucesso = `sucesso_${conta.nome}.png`;
+                    await page.screenshot({ path: caminhoPrintSucesso, fullPage: true });
+
+                    const bodyText = await page.innerText('body');
+                    const match = bodyText.match(/GTQ\s*([\d.,]+)/i);
+                    if (match) {
+                        carteiraReceita = match[1];
+                    } else {
+                        const locSaldo = page.getByText(/GTQ\s*[\d.,]+/).first();
+                        const texto = await locSaldo.innerText();
+                        carteiraReceita = texto.replace(/GTQ/i, '').trim();
+                    }
+                    console.log(`Saldo capturado Arla: ${carteiraReceita}`);
+                } catch (e) {
+                    console.log("Aviso: Falha ao capturar saldo ou print Arla:", e.message);
                 }
 
             } else {
