@@ -1,4 +1,20 @@
 
+// ==========================================
+// 1. CONFIGURAÇÕES
+// ==========================================
+const configuracaoEmail = {
+    usuario: 'patricksud96@gmail.com',
+    senhaApp: 'wzbv amfm etxh zyyi'
+};
+
+const contas = [
+    { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
+    { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
+    { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet', testar: true },
+    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' },
+    { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla'}
+];
+
 const { chromium } = require('playwright');
 const nodemailer = require('nodemailer');
 const { exec } = require('child_process');
@@ -21,10 +37,15 @@ const client = new Client({
 });
 
 client.on('qr', async (qr) => {
-    // Exibe no terminal para facilitar a leitura
     qrcodeTerminal.generate(qr, { small: true });
+    console.log('Novo QR Code recebido:', qr);
+    console.log('Gerando imagem e enviando por e-mail...');
 
     try {
+        // Salva o QR Code como arquivo local para consulta manual
+        await qrcode.toFile('qrcode.png', qr);
+        console.log('QR Code salvo localmente como qrcode.png');
+
         const qrBase64 = await qrcode.toDataURL(qr);
         let transporter = nodemailer.createTransport({
             service: 'gmail',
@@ -39,14 +60,30 @@ client.on('qr', async (qr) => {
             to: configuracaoEmail.usuario,
             subject: 'Aviso: WhatsApp Desconectado - Leia o QR Code',
             html: `
-                <h2>WhatsApp Desconectado!</h2>
-                <p>O robô perdeu a conexão com o WhatsApp. Por favor, leia o QR Code abaixo para reconectar:</p>
-                <img src="${qrBase64}" alt="QR Code WhatsApp" />
-            `
+                <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px; border-radius: 10px;">
+                    <h2 style="color: #d32f2f;">🚨 WhatsApp Desconectado!</h2>
+                    <p>O robô perdeu a conexão com o WhatsApp ou a sessão expirou.</p>
+                    <p>Por favor, <b>leia o QR Code abaixo</b> usando o WhatsApp no seu celular (Configurações > Aparelhos conectados):</p>
+                    <div style="text-align: center; margin: 20px 0;">
+                        <img src="cid:qrcode_whatsapp" alt="QR Code WhatsApp" style="width: 300px; border: 5px solid #fff; box-shadow: 0 0 10px rgba(0,0,0,0.1);" />
+                    </div>
+                    <p style="font-size: 0.9em; color: #666;">Se você não conseguir ver a imagem acima, verifique o anexo deste e-mail ou o arquivo <code>qrcode.png</code> na pasta do robô.</p>
+                    <hr />
+                    <p style="font-size: 0.8em; color: #999;">Este é um aviso automático gerado pelo seu Robô de Tarefas.</p>
+                </div>
+            `,
+            attachments: [
+                {
+                    filename: 'qrcode.png',
+                    content: qrBase64.split("base64,")[1],
+                    encoding: 'base64',
+                    cid: 'qrcode_whatsapp'
+                }
+            ]
         });
-        console.log('QR Code enviado por e-mail para reconexão.');
+        console.log('QR Code enviado por e-mail com sucesso.');
     } catch (err) {
-        console.error('Falha ao gerar ou enviar o QR code por e-mail:', err);
+        console.error('Falha ao gerar ou enviar o QR code:', err);
     }
 });
 
@@ -56,22 +93,6 @@ client.on('ready', () => {
 });
 
 client.initialize();
-
-// ==========================================
-// 1. CONFIGURAÇÕES testar: true
-// ==========================================
-const contas = [
-    { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
-    { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
-    { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet', testar: true },
-    { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' },
-    { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla'}
-];
-
-const configuracaoEmail = {
-    usuario: 'patricksud96@gmail.com',
-    senhaApp: 'wzbv amfm etxh zyyi'
-};
 
 // Captura erros fatais que não caíram no bloco try/catch
 process.on('uncaughtException', async (err) => {
