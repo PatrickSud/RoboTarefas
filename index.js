@@ -10,7 +10,7 @@ const configuracaoEmail = {
 const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
     { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
-    { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet', testar: true },
+    { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
     { nome: 'Patrick GK Wind', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'GKWind' },
     { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla'}
 ];
@@ -972,8 +972,17 @@ async function enviarEmail(conteudo, dataHoje) {
         }
 
         let info = await transporter.sendMail(opcoesEmail);
-
         console.log("E-mail final enviado com sucesso! ID:", info.messageId);
+
+        // Deleta o log após o envio bem-sucedido (atendendo ao pedido do usuário)
+        if (fs.existsSync('log_sistema.txt')) {
+            try {
+                fs.unlinkSync('log_sistema.txt');
+                console.log("Arquivo log_sistema.txt excluído após envio do e-mail.");
+            } catch (e) {
+                console.error("Erro ao excluir log_sistema.txt:", e.message);
+            }
+        }
     } catch (erro) {
         console.error("Falha ao enviar e-mail final:", erro.message);
     }

@@ -4,7 +4,7 @@ timeout /t 30
 
 cd /d "%~dp0"
 
-echo %date% %time% - Tentando baixar atualizacoes do GitHub... >> log_sistema.txt
+echo %date% %time% - Tentando baixar atualizacoes do GitHub... > log_sistema.txt
 echo =======================================================
 echo Buscando atualizacoes de codigo no GitHub...
 echo =======================================================
