@@ -10,7 +10,7 @@ const configuracaoEmail = {
 const contas = [
     { nome: 'Patrick', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'RoyalAurum' },
     { nome: 'Patrick VLM', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'VLM', telefoneWhatsApp: '19995487421' },
-    { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla' },
+    { nome: 'Patrick Arla', telefone: '995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Arla', telefoneWhatsApp: '19995487421' },
     { nome: 'Patrick Signet', telefone: '19995487421', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
     { nome: 'Gonzalo Signet', telefone: '1931997599', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet' },
     { nome: 'Magaly Signet', telefone: '19971691705', senha: 'Pagy2015', recebeWhatsApp: true, plataforma: 'Signet', telefoneWhatsApp: '19995487421' },
@@ -482,26 +482,43 @@ async function executarAutomacao() {
                 try {
                     const inputs = page.locator('input');
                     if (await inputs.count() >= 2) {
+                        // Limpa os campos antes de preencher para evitar duplicação por autofill
+                        await inputs.nth(0).click();
+                        await page.keyboard.press('Control+A');
+                        await page.keyboard.press('Backspace');
                         await inputs.nth(0).fill(conta.telefone);
+
+                        await inputs.nth(1).click();
+                        await page.keyboard.press('Control+A');
+                        await page.keyboard.press('Backspace');
                         await inputs.nth(1).fill(conta.senha);
                     }
                     await page.waitForTimeout(1000);
                     
                     await page.getByRole('button', { name: 'Entrar' }).first().click({ timeout: 5000 });
                     await page.waitForTimeout(4000);
+
+                    // Verifica se houve erro de login
+                    const erroLogin = page.getByText(/E-mail ou senha inválidos/i);
+                    if (await erroLogin.isVisible({ timeout: 2000 })) {
+                        console.log(`🚨 Erro de login na GK Wind (${conta.nome}): E-mail ou senha inválidos.`);
+                        // Tenta fechar o modal de erro para não travar
+                        try { await page.getByRole('button', { name: /Ok|Confirmar/i }).click(); } catch(e) {}
+                        continue; // Pula para a próxima conta
+                    }
+
                 } catch (e) {
-                    console.log("Aviso: Falha no login automático GK Wind.");
+                    console.log("Aviso: Falha no login automático GK Wind:", e.message);
                 }
 
-                console.log("Aguardando 4 segundos para que o comunicado seja apresentado...");
-                await page.waitForTimeout(4000);
-
-                console.log("Fechando comunicados...");
+                console.log("Aguardando comunicado de login...");
                 try {
-                    // Clicando bem na borda do botão para não ativar banners ou links acidentalmente
-                    const btnFechar = page.getByRole('button', { name: 'Fechar' });
-                    await btnFechar.waitFor({ state: 'visible', timeout: 6000 });
-                    await btnFechar.click({ position: { x: 2, y: 2 } }); 
+                    // Clicando no botão de fechar do comunicado (X ou Fechar)
+                    // O botão geralmente é uma div ou botão com texto "Fechar" ou um ícone de fechar
+                    const btnFechar = page.locator('button:has-text("Fechar"), .close-btn, [aria-label="Close"]').first();
+                    await btnFechar.waitFor({ state: 'visible', timeout: 8000 });
+                    await btnFechar.click(); 
+                    console.log("Comunicado fechado.");
                     await page.waitForTimeout(1500);
                 } catch(e) {
                     console.log("Nenhum comunicado encontrado ou já fechado.");
@@ -586,7 +603,10 @@ async function executarAutomacao() {
                 try {
                     const inputs = page.locator('input');
                     if (await inputs.count() >= 2) {
+                        // Limpa campos
+                        await inputs.nth(0).fill('');
                         await inputs.nth(0).fill(conta.telefone);
+                        await inputs.nth(1).fill('');
                         await inputs.nth(1).fill(conta.senha);
                     }
                     await page.waitForTimeout(1000);
@@ -598,14 +618,26 @@ async function executarAutomacao() {
                     console.log("Aviso: Falha no preenchimento de login Arla.");
                 }
 
-                // 1. Fechar comunicados
+                // 1. Fechar comunicados (Notificação do sistema)
+                console.log("Fechando comunicados Arla...");
                 try {
-                    const btnConfirme = page.getByRole('button', { name: 'confirme' });
-                    if (await btnConfirme.isVisible({ timeout: 5000 })) {
+                    // O seletor .van-dialog__confirm é o padrão para botões "confirme" em diálogos Vant
+                    const btnConfirme = page.locator('.van-dialog__confirm, button:has-text("confirme")').first();
+                    if (await btnConfirme.isVisible({ timeout: 10000 })) {
                         await btnConfirme.click();
-                        await page.waitForTimeout(1000);
+                        console.log("Comunicado Arla fechado.");
+                        await page.waitForTimeout(2000);
                     }
-                } catch (e) {}
+                    
+                    // Espera o overlay desaparecer para evitar bloqueio de clique
+                    try {
+                        await page.waitForSelector('.van-overlay', { state: 'hidden', timeout: 5000 });
+                    } catch(e) {
+                        console.log("Aviso: Overlay ainda presente ou não encontrado.");
+                    }
+                } catch (e) {
+                    console.log("Erro ao fechar comunicados Arla:", e.message);
+                }
 
                 // 2. Menu Fazenda e Alimentação
                 try {
@@ -1004,7 +1036,7 @@ async function enviarEmailIndividual(emailDestino, nome, saldo, qtdTarefas, data
 
         let assunto = '';
         let conteudo = '';
-        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : (plataforma === 'Signet' ? 'Signet' : (plataforma === 'GKWind' ? 'GK Wind' : 'Royal Aurum'));
+        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : (plataforma === 'Signet' ? 'Signet' : (plataforma === 'GKWind' ? 'GK Wind' : (plataforma === 'Arla' ? 'Arla' : 'Royal Aurum')));
 
         // Verifica se fez tarefas ou se já estavam concluídas
         if (qtdTarefas > 0) {
@@ -1070,7 +1102,7 @@ async function enviarWhatsApp(numero, nome, saldo, qtdTarefas, dataHoje, caminho
     try {
         const numeroDestino = `55${numero}@c.us`;
         let mensagem = '';
-        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : (plataforma === 'Signet' ? 'Signet' : (plataforma === 'GKWind' ? 'GK Wind' : 'Royal Aurum'));
+        const nomePlataforma = plataforma === 'VLM' ? 'VLM' : (plataforma === 'Signet' ? 'Signet' : (plataforma === 'GKWind' ? 'GK Wind' : (plataforma === 'Arla' ? 'Arla' : 'Royal Aurum')));
 
         if (qtdTarefas > 0) {
             mensagem = `Olá, ${nome}! ✅\nO robô concluiu ${qtdTarefas} tarefa(s) na plataforma *${nomePlataforma}* com sucesso hoje (${dataHoje}).\nSaldo atualizado: ${saldo}`;
