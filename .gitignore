@@ -14,6 +14,7 @@ npm-debug.log*
 
 # Variaveis de ambiente e senhas (caso use no futuro)
 .env
+config/accounts.js
 
 # Arquivos inuteis do Sistema Operacional
 Thumbs.db
