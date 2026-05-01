@@ -1,8 +1,9 @@
 @echo off
-echo Aguardando 30 segundos para a rede da AWS conectar...
-timeout /t 30
+echo Aguardando 15 segundos para a rede da AWS conectar...
+timeout /t 15
 
-cd /d "%~dp0"
+:: Força o terminal a abrir na pasta correta do seu projeto
+cd /d C:\Users\Administrator\Desktop\RoboTarefas
 
 echo %date% %time% - Tentando baixar atualizacoes do GitHub... > log_sistema.txt
 echo =======================================================
@@ -14,10 +15,17 @@ git checkout package.json package-lock.json >> log_sistema.txt 2>&1
 git pull origin master >> log_sistema.txt 2>&1
 echo.
 
-echo =======================================================
-echo Iniciando o Robo de Tarefas em 3 minutos (180 segundos)
-echo =======================================================
-timeout /t 180
+echo Instalando/Atualizando dependencias...
+call npm install >> log_sistema.txt 2>&1
+echo.
 
+echo =======================================================
+echo Iniciando o Robo de Tarefas e a API...
+echo =======================================================
+timeout /t 60
+
+:: O comando set abaixo substitui a necessidade de colocar no arquivo .env
 set AUTO_SHUTDOWN=true
-npm start >> log_sistema.txt 2>&1
+
+:: Comando atualizado para iniciar a API que o Netlify vai escutar
+npm run api >> log_sistema.txt 2>&1

@@ -7,10 +7,28 @@ const { cleanupOldPrints } = require('./services/storageCleanupService')
 const port = Number(process.env.ROBOT_API_PORT || 3001)
 const token = process.env.ROBOT_API_TOKEN
 const retentionDays = Number(process.env.PRINT_RETENTION_DAYS || 30)
+const idleTimeoutMin = Number(process.env.IDLE_TIMEOUT_MIN || 10)
 
 let running = false
 let lastRun = null
 let lastExitCode = null
+let idleTimer = null
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer)
+  if (process.env.AUTO_SHUTDOWN === 'true' && !running) {
+    console.log(
+      `Timer de inatividade iniciado: ${idleTimeoutMin} minutos para desligar...`
+    )
+    idleTimer = setTimeout(
+      () => {
+        console.log('Inatividade detectada. Desligando a máquina...')
+        spawn('shutdown', ['/s', '/t', '60'])
+      },
+      idleTimeoutMin * 60 * 1000
+    )
+  }
+}
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -43,13 +61,22 @@ function runRobot() {
     running = false
     lastExitCode = code
     console.log(`Execução do robô finalizada com código ${code}`)
+
+    if (process.env.AUTO_SHUTDOWN === 'true') {
+      console.log('AUTO_SHUTDOWN ativo. Desligando a máquina em 60 segundos...')
+      spawn('shutdown', ['/s', '/t', '60'])
+    } else {
+      resetIdleTimer()
+    }
   })
 }
 
 async function runCleanup() {
   try {
     const result = await cleanupOldPrints(retentionDays)
-    console.log(`Limpeza de prints: ${result.removedCount} arquivo(s) removido(s).`)
+    console.log(
+      `Limpeza de prints: ${result.removedCount} arquivo(s) removido(s).`
+    )
   } catch (error) {
     console.error('Falha na limpeza automática de prints:', error.message)
   }
@@ -77,6 +104,7 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    if (idleTimer) clearTimeout(idleTimer)
     await runCleanup()
     runRobot()
     sendJson(res, 202, { ok: true, message: 'Execução iniciada.', lastRun })
@@ -99,7 +127,11 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`API do RoboTarefas ouvindo na porta ${port}`)
-  if (!token) console.warn('ROBOT_API_TOKEN não configurado. Endpoints protegidos não funcionarão.')
+  if (!token)
+    console.warn(
+      'ROBOT_API_TOKEN não configurado. Endpoints protegidos não funcionarão.'
+    )
   runCleanup()
+  resetIdleTimer()
   setInterval(runCleanup, 24 * 60 * 60 * 1000)
 })
