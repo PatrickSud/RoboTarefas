@@ -7,8 +7,18 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [runMessage, setRunMessage] = useState('');
+  const [schedule, setSchedule] = useState({ enabled: false, hour: 8 });
 
   async function fetchLatestResults() {
+    // ... busca resultados existentes ...
+    const { data: config } = await supabase
+      .from('global_settings')
+      .select('value')
+      .eq('key', 'schedule')
+      .single();
+    
+    if (config) setSchedule(config.value);
+
     const { data, error } = await supabase
       .from('account_run_results')
       .select('*')
@@ -77,6 +87,15 @@ export default function Dashboard() {
   const successCount = results.filter(r => r.status === 'success').length;
   const errorCount = results.filter(r => r.status === 'error').length;
 
+  async function updateSchedule(newSchedule) {
+    const { error } = await supabase
+      .from('global_settings')
+      .update({ value: newSchedule })
+      .eq('key', 'schedule');
+    
+    if (!error) setSchedule(newSchedule);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -100,6 +119,45 @@ export default function Dashboard() {
           <Play size={16} />
           {running ? 'Iniciando...' : 'Rodar Agora'}
         </button>
+      </div>
+
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${schedule.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
+              <Clock size={20} />
+            </div>
+            <div>
+              <p className="font-semibold text-white">Agendamento Automático</p>
+              <p className="text-xs text-gray-500">
+                {schedule.enabled 
+                  ? `Ativo: O robô rodará todos os dias às ${String(schedule.hour).padStart(2, '0')}:00` 
+                  : 'Desativado: O robô não rodará automaticamente'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <select 
+              value={schedule.hour}
+              onChange={(e) => updateSchedule({ ...schedule, hour: parseInt(e.target.value) })}
+              className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              {[...Array(24)].map((_, i) => (
+                <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+              ))}
+            </select>
+            <button
+              onClick={() => updateSchedule({ ...schedule, enabled: !schedule.enabled })}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
+                schedule.enabled 
+                  ? 'bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20' 
+                  : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+              }`}
+            >
+              {schedule.enabled ? 'Ativo' : 'Ativar'}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
