@@ -20,5 +20,11 @@ export default defineConfig([
     rules: {
       'react-hooks/set-state-in-effect': 'off'
     }
+  },
+  {
+    files: ['netlify/functions/**/*.js'],
+    languageOptions: {
+      globals: globals.node
+    }
   }
 ])

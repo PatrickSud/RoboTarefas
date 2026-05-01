@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, XCircle, Clock, Activity } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Activity, Play } from 'lucide-react';
 
 export default function Dashboard() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runMessage, setRunMessage] = useState('');
 
   async function fetchLatestResults() {
     const { data, error } = await supabase
@@ -29,6 +31,29 @@ export default function Dashboard() {
     fetchLatestResults();
   }, []);
 
+  async function handleRunNow() {
+    setRunning(true);
+    setRunMessage('');
+
+    try {
+      const response = await fetch('/.netlify/functions/run-robot', {
+        method: 'POST',
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setRunMessage(payload.message || 'Não foi possível iniciar o robô.');
+        return;
+      }
+
+      setRunMessage(payload.message || 'Execução iniciada.');
+    } catch (error) {
+      setRunMessage(`Falha ao iniciar execução: ${error.message}`);
+    } finally {
+      setRunning(false);
+    }
+  }
+
   const successCount = results.filter(r => r.status === 'success').length;
   const errorCount = results.filter(r => r.status === 'error').length;
 
@@ -42,7 +67,20 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h2 className="text-xl md:text-2xl font-bold text-white mb-4 md:mb-6">Dashboard</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 md:mb-6">
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold text-white">Dashboard</h2>
+          {runMessage && <p className="text-sm text-gray-400 mt-1">{runMessage}</p>}
+        </div>
+        <button
+          onClick={handleRunNow}
+          disabled={running}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <Play size={16} />
+          {running ? 'Iniciando...' : 'Rodar Agora'}
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
