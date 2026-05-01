@@ -1,8 +1,4 @@
-const {
-  EC2Client,
-  StartInstancesCommand,
-  DescribeInstancesCommand
-} = require('@aws-sdk/client-ec2')
+const { EC2Client, StartInstancesCommand } = require('@aws-sdk/client-ec2')
 
 const ec2 = new EC2Client({
   region: process.env.MY_AWS_REGION || 'sa-east-1',
@@ -12,21 +8,7 @@ const ec2 = new EC2Client({
   }
 })
 
-async function waitForServer(url, timeoutMs = 120000) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(`${url}/health`)
-      if (res.ok) return true
-    } catch (e) {
-      // Ignora erro de conexão enquanto espera o boot
-    }
-    await new Promise(r => setTimeout(r, 5000))
-  }
-  return false
-}
-
-exports.handler = async function handler(event) {
+exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -34,6 +16,7 @@ exports.handler = async function handler(event) {
     }
   }
 
+  const { action } = JSON.parse(event.body || '{}')
   const apiUrl = process.env.ROBOT_API_URL
   const apiToken = process.env.ROBOT_API_TOKEN
   const instanceId = process.env.AWS_INSTANCE_ID
@@ -41,53 +24,58 @@ exports.handler = async function handler(event) {
   if (!apiUrl || !apiToken || !instanceId) {
     return {
       statusCode: 500,
-      body: JSON.stringify({
-        ok: false,
-        message: 'Configurações de API ou AWS incompletas no Netlify.'
-      })
+      body: JSON.stringify({ ok: false, message: 'Configurações incompletas.' })
     }
   }
 
   try {
-    // 1. Tenta ligar a instância
-    console.log(`Iniciando instância ${instanceId}...`)
-    await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }))
-
-    // 2. Aguarda o servidor ficar pronto (boot + API start)
-    console.log('Aguardando servidor ficar online...')
-    const isOnline = await waitForServer(apiUrl.replace(/\/$/, ''))
-
-    if (!isOnline) {
+    // AÇÃO 1: Ligar a instância (rápido)
+    if (action === 'start') {
+      await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }))
       return {
-        statusCode: 504,
-        body: JSON.stringify({
-          ok: false,
-          message: 'O servidor AWS demorou muito para ligar.'
-        })
+        statusCode: 200,
+        body: JSON.stringify({ ok: true, status: 'starting' })
       }
     }
 
-    // 3. Dispara o robô
-    const response = await fetch(`${apiUrl.replace(/\/$/, '')}/run`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        'Content-Type': 'application/json'
+    // AÇÃO 2: Verificar se a API já subiu (rápido)
+    if (action === 'health') {
+      try {
+        const res = await fetch(`${apiUrl.replace(/\/$/, '')}/health`, {
+          signal: AbortSignal.timeout(5000)
+        })
+        const data = await res.json()
+        return { statusCode: 200, body: JSON.stringify({ ok: true, ...data }) }
+      } catch (e) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ ok: false, status: 'offline' })
+        }
       }
-    })
+    }
 
-    const payload = await response.json()
+    // AÇÃO 3: Disparar o robô (rápido - o server.js responde 202 imediatamente)
+    if (action === 'run') {
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/run`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        signal: AbortSignal.timeout(8000)
+      })
+      const payload = await response.json()
+      return { statusCode: response.status, body: JSON.stringify(payload) }
+    }
+
     return {
-      statusCode: response.status,
-      body: JSON.stringify(payload)
+      statusCode: 400,
+      body: JSON.stringify({ ok: false, message: 'Ação inválida.' })
     }
   } catch (error) {
     return {
       statusCode: 502,
-      body: JSON.stringify({
-        ok: false,
-        message: `Falha no processo: ${error.message}`
-      })
+      body: JSON.stringify({ ok: false, message: error.message })
     }
   }
 }

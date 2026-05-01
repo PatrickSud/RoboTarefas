@@ -33,22 +33,42 @@ export default function Dashboard() {
 
   async function handleRunNow() {
     setRunning(true);
-    setRunMessage('');
+    setRunMessage('Ligando servidor AWS...');
+
+    const callFunction = async (action) => {
+      const res = await fetch('/.netlify/functions/run-robot', {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      return res.json();
+    };
 
     try {
-      const response = await fetch('/.netlify/functions/run-robot', {
-        method: 'POST',
-      });
-      const payload = await response.json();
+      // 1. Liga a instância
+      await callFunction('start');
 
-      if (!response.ok) {
-        setRunMessage(payload.message || 'Não foi possível iniciar o robô.');
+      // 2. Poll de saúde (máximo 3 minutos)
+      let ready = false;
+      const startTime = Date.now();
+      while (!ready && Date.now() - startTime < 180000) {
+        setRunMessage('Aguardando servidor subir (isso pode levar 2 min)...');
+        await new Promise(r => setTimeout(r, 10000)); // Espera 10s entre tentativas
+        const health = await callFunction('health');
+        if (health.ok) ready = true;
+      }
+
+      if (!ready) {
+        setRunMessage('O servidor demorou muito para responder.');
+        setRunning(false);
         return;
       }
 
-      setRunMessage(payload.message || 'Execução iniciada.');
+      // 3. Dispara o robô
+      setRunMessage('Servidor online! Iniciando robô...');
+      const run = await callFunction('run');
+      setRunMessage(run.message || 'Execução iniciada com sucesso.');
     } catch (error) {
-      setRunMessage(`Falha ao iniciar execução: ${error.message}`);
+      setRunMessage(`Erro: ${error.message}`);
     } finally {
       setRunning(false);
     }
