@@ -579,6 +579,55 @@ async function executarAutomacao() {
         await page.goto('https://gkwindbr.com/login/')
         await page.waitForTimeout(3000)
 
+        console.log('Verificando idioma da página GK Wind...')
+        try {
+          const bodyText = await page.innerText('body')
+          const emIngles =
+            bodyText.includes('Password') ||
+            bodyText.includes('Sign in') ||
+            (bodyText.includes('Login') &&
+              !bodyText.includes('Entrar') &&
+              !bodyText.includes('Senha'))
+          if (emIngles) {
+            console.log(
+              'Página em inglês detectada. Tentando mudar para português...'
+            )
+            try {
+              const langSelector = page
+                .locator(
+                  '[class*="lang"], [class*="language"], .lang-switch, [class*="locale"]'
+                )
+                .first()
+              if (await langSelector.isVisible({ timeout: 2000 })) {
+                await langSelector.click()
+                await page.waitForTimeout(1000)
+                await page
+                  .getByText(/Português|PT|Brasil/i)
+                  .first()
+                  .click()
+                await page.waitForTimeout(2000)
+              } else {
+                console.log(
+                  'Seletor de idioma não encontrado. Recarregando em pt-BR...'
+                )
+                await page.goto('https://gkwindbr.com/login/?lang=pt')
+                await page.waitForTimeout(3000)
+              }
+            } catch (e) {
+              console.log(
+                'Aviso: Não foi possível mudar o idioma da GK Wind automaticamente.'
+              )
+            }
+          } else {
+            console.log('Página já está em português.')
+          }
+        } catch (e) {
+          console.log(
+            'Aviso: Falha na verificação de idioma GK Wind:',
+            e.message
+          )
+        }
+
         console.log('Preenchendo credenciais GK Wind...')
         try {
           const inputs = page.locator('input')
@@ -762,6 +811,53 @@ async function executarAutomacao() {
           await page.waitForTimeout(5000)
         } catch (e) {
           console.log('Aviso: Falha no preenchimento de login Arla.')
+        }
+
+        // Verificar idioma pós-login Arla
+        console.log('Verificando idioma pós-login Arla...')
+        try {
+          const bodyText = await page.innerText('body')
+          const emEspanhol =
+            /Iniciar sesión|Bienvenido|Granja|Alimentar|Clic para iniciar/i.test(
+              bodyText
+            ) &&
+            !bodyText.includes('fazenda') &&
+            !bodyText.includes('Faça login')
+          if (emEspanhol) {
+            console.log(
+              'Página em espanhol detectada. Tentando mudar para português...'
+            )
+            try {
+              const langSelector = page
+                .locator(
+                  '[class*="lang"], [class*="language"], .lang-switch, [class*="locale"], [class*="idioma"]'
+                )
+                .first()
+              if (await langSelector.isVisible({ timeout: 2000 })) {
+                await langSelector.click()
+                await page.waitForTimeout(1000)
+                await page
+                  .getByText(/Português|PT-BR|Brasil/i)
+                  .first()
+                  .click()
+                await page.waitForTimeout(2000)
+              } else {
+                console.log(
+                  'Seletor de idioma Arla não encontrado. Tentando via URL...'
+                )
+                await page.goto('https://arlavt.com/m/login?lang=pt')
+                await page.waitForTimeout(2000)
+              }
+            } catch (e) {
+              console.log(
+                'Aviso: Não foi possível mudar o idioma da Arla automaticamente.'
+              )
+            }
+          } else {
+            console.log('Página Arla já está em português.')
+          }
+        } catch (e) {
+          console.log('Aviso: Falha na verificação de idioma Arla:', e.message)
         }
 
         // 1. Fechar comunicados (Notificação do sistema)
