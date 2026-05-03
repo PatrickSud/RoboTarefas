@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, XCircle, Clock, Activity, Play, Power } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Activity, Play, Power, Wifi, WifiOff, RefreshCw, Terminal, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export default function Dashboard() {
   const [results, setResults] = useState([]);
@@ -9,6 +10,16 @@ export default function Dashboard() {
   const [runMessage, setRunMessage] = useState('');
   const [schedule, setSchedule] = useState({ enabled: false, hour: 8 });
   const [autoShutdown, setAutoShutdown] = useState(true);
+  const [awsStatus, setAwsStatus] = useState('unknown'); // 'online' | 'offline' | 'unknown'
+  const [logs, setLogs] = useState('');
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [chartData, setChartData] = useState([]);
+  const [chartAccounts, setChartAccounts] = useState([]);
+  const [showChart, setShowChart] = useState(false);
+  const logsRef = useRef(null);
+
+  const CHART_COLORS = ['#818cf8','#34d399','#fb923c','#f472b6','#60a5fa','#a78bfa','#facc15'];
 
   async function fetchLatestResults() {
     const [{ data: configSchedule }, { data: configPrefs }] = await Promise.all([
@@ -28,17 +39,71 @@ export default function Dashboard() {
     if (!error && data) {
       const latestByAccount = {};
       for (const row of data) {
-        if (!latestByAccount[row.account_name]) {
-          latestByAccount[row.account_name] = row;
-        }
+        if (!latestByAccount[row.account_name]) latestByAccount[row.account_name] = row;
       }
       setResults(Object.values(latestByAccount));
     }
     setLoading(false);
   }
 
+  async function fetchChartData() {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const { data } = await supabase
+      .from('account_run_results')
+      .select('account_name, balance, executed_at')
+      .eq('status', 'success')
+      .gte('executed_at', since.toISOString())
+      .order('executed_at', { ascending: true });
+
+    if (!data) return;
+    const accounts = [...new Set(data.map(r => r.account_name))];
+    setChartAccounts(accounts);
+    const byDate = {};
+    for (const r of data) {
+      const date = new Date(r.executed_at).toLocaleDateString('pt-BR');
+      if (!byDate[date]) byDate[date] = { date };
+      const val = parseFloat((r.balance || '0').replace(',', '.'));
+      if (!isNaN(val)) byDate[date][r.account_name] = val;
+    }
+    setChartData(Object.values(byDate));
+  }
+
+  async function checkAwsStatus() {
+    try {
+      const res = await fetch('/.netlify/functions/run-robot', {
+        method: 'POST', body: JSON.stringify({ action: 'health' }),
+      });
+      const data = await res.json();
+      setAwsStatus(data.ok ? 'online' : 'offline');
+    } catch { setAwsStatus('offline'); }
+  }
+
+  async function fetchLogs() {
+    setLogsLoading(true);
+    try {
+      const res = await fetch('/.netlify/functions/run-robot', {
+        method: 'POST', body: JSON.stringify({ action: 'logs' }),
+      });
+      const data = await res.json();
+      setLogs(data.logs || '(Sem logs disponíveis)');
+      setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
+    } catch { setLogs('(Erro ao buscar logs)'); }
+    setLogsLoading(false);
+  }
+
   useEffect(() => {
     fetchLatestResults();
+    checkAwsStatus();
+
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'account_run_results' }, () => {
+        fetchLatestResults();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   async function handleRunNow() {
@@ -116,7 +181,22 @@ export default function Dashboard() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 md:mb-6">
         <div>
-          <h2 className="text-xl md:text-2xl font-bold text-white">Dashboard</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl md:text-2xl font-bold text-white">Dashboard</h2>
+            <button onClick={checkAwsStatus} title="Verificar status AWS" className="text-gray-600 hover:text-gray-400 transition-colors">
+              <RefreshCw size={14} />
+            </button>
+            <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${
+              awsStatus === 'online'
+                ? 'bg-green-500/10 text-green-400 border-green-500/30'
+                : awsStatus === 'offline'
+                ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                : 'bg-gray-700 text-gray-500 border-gray-600'
+            }`}>
+              {awsStatus === 'online' ? <Wifi size={10} /> : <WifiOff size={10} />}
+              AWS {awsStatus === 'online' ? 'Online' : awsStatus === 'offline' ? 'Offline' : '...'}
+            </span>
+          </div>
           {runMessage && <p className="text-sm text-gray-400 mt-1">{runMessage}</p>}
         </div>
         <div className="flex items-center gap-2">
@@ -282,6 +362,78 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
+          </div>
+        )}
+      </div>
+
+      {/* Gráfico de saldo ao longo do tempo */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mt-6">
+        <button
+          className="w-full px-4 md:px-5 py-4 flex items-center justify-between hover:bg-gray-800/40 transition-colors"
+          onClick={() => { setShowChart(v => !v); if (!showChart && chartData.length === 0) fetchChartData(); }}
+        >
+          <div className="flex items-center gap-2">
+            <TrendingUp size={16} className="text-indigo-400" />
+            <span className="font-semibold text-white">Saldo ao Longo do Tempo (últimos 30 dias)</span>
+          </div>
+          {showChart ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
+        </button>
+        {showChart && (
+          <div className="px-2 pb-4">
+            {chartData.length === 0 ? (
+              <p className="text-center text-gray-600 text-sm py-8">Nenhum dado disponível.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="date" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                  <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} labelStyle={{ color: '#e5e7eb' }} itemStyle={{ color: '#e5e7eb' }} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                  {chartAccounts.map((acc, i) => (
+                    <Line key={acc} type="monotone" dataKey={acc} stroke={CHART_COLORS[i % CHART_COLORS.length]} dot={false} strokeWidth={2} connectNulls />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Painel de Logs */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mt-4">
+        <button
+          className="w-full px-4 md:px-5 py-4 flex items-center justify-between hover:bg-gray-800/40 transition-colors"
+          onClick={() => { setLogsOpen(v => !v); if (!logsOpen && !logs) fetchLogs(); }}
+        >
+          <div className="flex items-center gap-2">
+            <Terminal size={16} className="text-green-400" />
+            <span className="font-semibold text-white">Logs da Máquina AWS</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {logsOpen && (
+              <button onClick={e => { e.stopPropagation(); fetchLogs(); }}
+                className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                <RefreshCw size={12} /> Atualizar
+              </button>
+            )}
+            {logsOpen ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
+          </div>
+        </button>
+        {logsOpen && (
+          <div className="border-t border-gray-800">
+            {logsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
+              </div>
+            ) : (
+              <pre
+                ref={logsRef}
+                className="text-xs text-green-300 font-mono bg-gray-950 p-4 overflow-auto max-h-72 whitespace-pre-wrap leading-5"
+              >
+                {logs || '(Sem logs)'}
+              </pre>
+            )}
           </div>
         )}
       </div>

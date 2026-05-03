@@ -16,7 +16,7 @@ exports.handler = async function (event) {
     }
   }
 
-  const { action } = JSON.parse(event.body || '{}')
+  const { action, autoShutdown } = JSON.parse(event.body || '{}')
   const apiUrl = process.env.ROBOT_API_URL
   const apiToken = process.env.ROBOT_API_TOKEN
   const instanceId = process.env.AWS_INSTANCE_ID
@@ -67,6 +67,23 @@ exports.handler = async function (event) {
       })
       const payload = await response.json()
       return { statusCode: response.status, body: JSON.stringify(payload) }
+    }
+
+    // AÇÃO 4: Buscar logs da AWS
+    if (action === 'logs') {
+      try {
+        const res = await fetch(`${apiUrl.replace(/\/$/, '')}/logs`, {
+          headers: { Authorization: `Bearer ${apiToken}` },
+          signal: AbortSignal.timeout(8000)
+        })
+        const data = await res.json()
+        return { statusCode: 200, body: JSON.stringify(data) }
+      } catch (e) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ ok: false, logs: '' })
+        }
+      }
     }
 
     return {
