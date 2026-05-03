@@ -13,10 +13,12 @@ let running = false
 let lastRun = null
 let lastExitCode = null
 let idleTimer = null
+let shutdownEnabled = process.env.AUTO_SHUTDOWN === 'true'
 
 function resetIdleTimer() {
   if (idleTimer) clearTimeout(idleTimer)
-  if (process.env.AUTO_SHUTDOWN === 'true' && !running) {
+  idleTimer = null
+  if (shutdownEnabled && !running) {
     console.log(
       `Timer de inatividade iniciado: ${idleTimeoutMin} minutos para desligar...`
     )
@@ -47,6 +49,7 @@ function isAuthorized(req) {
 }
 
 function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true') {
+  shutdownEnabled = shouldShutdown
   running = true
   lastRun = new Date().toISOString()
   lastExitCode = null
