@@ -62,6 +62,7 @@ exports.handler = async function (event) {
           Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json'
         },
+        body: JSON.stringify({ autoShutdown }),
         signal: AbortSignal.timeout(8000)
       })
       const payload = await response.json()

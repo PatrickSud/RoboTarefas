@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, XCircle, Clock, Activity, Play } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Activity, Play, Power } from 'lucide-react';
 
 export default function Dashboard() {
   const [results, setResults] = useState([]);
@@ -8,16 +8,16 @@ export default function Dashboard() {
   const [running, setRunning] = useState(false);
   const [runMessage, setRunMessage] = useState('');
   const [schedule, setSchedule] = useState({ enabled: false, hour: 8 });
+  const [autoShutdown, setAutoShutdown] = useState(true);
 
   async function fetchLatestResults() {
-    // ... busca resultados existentes ...
-    const { data: config } = await supabase
-      .from('global_settings')
-      .select('value')
-      .eq('key', 'schedule')
-      .single();
-    
-    if (config) setSchedule(config.value);
+    const [{ data: configSchedule }, { data: configPrefs }] = await Promise.all([
+      supabase.from('global_settings').select('value').eq('key', 'schedule').single(),
+      supabase.from('global_settings').select('value').eq('key', 'preferences').single(),
+    ]);
+
+    if (configSchedule) setSchedule(configSchedule.value);
+    if (configPrefs) setAutoShutdown(configPrefs.value.auto_shutdown ?? true);
 
     const { data, error } = await supabase
       .from('account_run_results')
@@ -48,7 +48,7 @@ export default function Dashboard() {
     const callFunction = async (action) => {
       const res = await fetch('/.netlify/functions/run-robot', {
         method: 'POST',
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, autoShutdown }),
       });
       return res.json();
     };
@@ -92,8 +92,16 @@ export default function Dashboard() {
       .from('global_settings')
       .update({ value: newSchedule })
       .eq('key', 'schedule');
-    
     if (!error) setSchedule(newSchedule);
+  }
+
+  async function toggleAutoShutdown() {
+    const newValue = !autoShutdown;
+    const { error } = await supabase
+      .from('global_settings')
+      .update({ value: { auto_shutdown: newValue } })
+      .eq('key', 'preferences');
+    if (!error) setAutoShutdown(newValue);
   }
 
   if (loading) {
@@ -111,14 +119,28 @@ export default function Dashboard() {
           <h2 className="text-xl md:text-2xl font-bold text-white">Dashboard</h2>
           {runMessage && <p className="text-sm text-gray-400 mt-1">{runMessage}</p>}
         </div>
-        <button
-          onClick={handleRunNow}
-          disabled={running}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <Play size={16} />
-          {running ? 'Iniciando...' : 'Rodar Agora'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleAutoShutdown}
+            title={autoShutdown ? 'Desligar máquina ao término: Ativo' : 'Desligar máquina ao término: Inativo'}
+            className={`inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+              autoShutdown
+                ? 'bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20'
+                : 'bg-gray-800 text-gray-500 border-gray-700 hover:bg-gray-700'
+            }`}
+          >
+            <Power size={15} />
+            {autoShutdown ? 'Desligar Auto' : 'Desligar Manual'}
+          </button>
+          <button
+            onClick={handleRunNow}
+            disabled={running}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Play size={16} />
+            {running ? 'Iniciando...' : 'Rodar Agora'}
+          </button>
+        </div>
       </div>
 
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-6">
