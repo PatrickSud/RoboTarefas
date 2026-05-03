@@ -1,16 +1,38 @@
 require('dotenv').config()
 
 const http = require('http')
+const fs = require('fs')
+const path = require('path')
 const { spawn } = require('child_process')
 const { cleanupOldPrints } = require('./services/storageCleanupService')
 
 const port = Number(process.env.ROBOT_API_PORT || 3001)
 const token = process.env.ROBOT_API_TOKEN
 const retentionDays = Number(process.env.PRINT_RETENTION_DAYS || 30)
+const idleTimeoutMin = Number(process.env.IDLE_TIMEOUT_MIN || 10)
 
 let running = false
 let lastRun = null
 let lastExitCode = null
+let idleTimer = null
+let shutdownEnabled = process.env.AUTO_SHUTDOWN === 'true'
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = null
+  if (shutdownEnabled && !running) {
+    console.log(
+      `Timer de inatividade iniciado: ${idleTimeoutMin} minutos para desligar...`
+    )
+    idleTimer = setTimeout(
+      () => {
+        console.log('Inatividade detectada. Desligando a máquina...')
+        spawn('shutdown', ['/s', '/t', '60'])
+      },
+      idleTimeoutMin * 60 * 1000
+    )
+  }
+}
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -28,10 +50,14 @@ function isAuthorized(req) {
   return authHeader === `Bearer ${token}`
 }
 
-function runRobot() {
+function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true') {
+  shutdownEnabled = shouldShutdown
   running = true
   lastRun = new Date().toISOString()
   lastExitCode = null
+  console.log(
+    `Desligamento automático: ${shouldShutdown ? 'ATIVO' : 'INATIVO'}`
+  )
 
   const child = spawn(process.execPath, ['index.js'], {
     cwd: __dirname,
@@ -43,13 +69,22 @@ function runRobot() {
     running = false
     lastExitCode = code
     console.log(`Execução do robô finalizada com código ${code}`)
+
+    if (shouldShutdown) {
+      console.log('AUTO_SHUTDOWN ativo. Desligando a máquina em 60 segundos...')
+      spawn('shutdown', ['/s', '/t', '60'])
+    } else {
+      resetIdleTimer()
+    }
   })
 }
 
 async function runCleanup() {
   try {
     const result = await cleanupOldPrints(retentionDays)
-    console.log(`Limpeza de prints: ${result.removedCount} arquivo(s) removido(s).`)
+    console.log(
+      `Limpeza de prints: ${result.removedCount} arquivo(s) removido(s).`
+    )
   } catch (error) {
     console.error('Falha na limpeza automática de prints:', error.message)
   }
@@ -77,8 +112,17 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    let body = ''
+    for await (const chunk of req) body += chunk
+    const { autoShutdown: bodyShutdown } = JSON.parse(body || '{}')
+    const shouldShutdown =
+      bodyShutdown !== undefined
+        ? bodyShutdown
+        : process.env.AUTO_SHUTDOWN === 'true'
+
+    if (idleTimer) clearTimeout(idleTimer)
     await runCleanup()
-    runRobot()
+    runRobot(shouldShutdown)
     sendJson(res, 202, { ok: true, message: 'Execução iniciada.', lastRun })
     return
   }
@@ -94,12 +138,35 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  if (req.url === '/logs' && req.method === 'GET') {
+    if (!isAuthorized(req)) {
+      sendJson(res, 401, { ok: false, message: 'Não autorizado.' })
+      return
+    }
+    try {
+      const logPath = path.join(__dirname, 'log_sistema.txt')
+      const content = fs.existsSync(logPath)
+        ? fs.readFileSync(logPath, 'utf8')
+        : ''
+      const lines = content.split('\n')
+      const lastLines = lines.slice(-300).join('\n')
+      sendJson(res, 200, { ok: true, logs: lastLines })
+    } catch (e) {
+      sendJson(res, 200, { ok: true, logs: '(Nenhum log disponível)' })
+    }
+    return
+  }
+
   sendJson(res, 404, { ok: false, message: 'Endpoint não encontrado.' })
 })
 
 server.listen(port, () => {
   console.log(`API do RoboTarefas ouvindo na porta ${port}`)
-  if (!token) console.warn('ROBOT_API_TOKEN não configurado. Endpoints protegidos não funcionarão.')
+  if (!token)
+    console.warn(
+      'ROBOT_API_TOKEN não configurado. Endpoints protegidos não funcionarão.'
+    )
   runCleanup()
+  resetIdleTimer()
   setInterval(runCleanup, 24 * 60 * 60 * 1000)
 })

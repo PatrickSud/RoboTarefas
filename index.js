@@ -21,6 +21,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js')
 const { buscarContasParaProcessar } = require('./services/accountService')
 const { salvarResultadoConta } = require('./services/runResultService')
 const { uploadPrintToStorage } = require('./services/storageService')
+const { supabase } = require('./services/supabaseClient')
 
 const client = new Client({
   authStrategy: new LocalAuth(),
@@ -114,6 +115,7 @@ process.on('uncaughtException', async err => {
 async function executarAutomacao() {
   let relatorioFinal = 'Relatório de Saldos das Contas:\n\n'
   const dataHoje = new Date().toLocaleDateString('pt-BR')
+  const saldosHoje = {}
 
   // NOVO: LÓGICA DE TESTE
   // Verifica se existe alguma conta marcada com 'testar: true'
@@ -140,1051 +142,1201 @@ async function executarAutomacao() {
   for (const conta of contasParaProcessar) {
     console.log(`\n--- Iniciando conta: ${conta.nome} (${conta.telefone}) ---`)
 
-    const context = await browser.newContext()
-    const page = await context.newPage()
+    let tentativaAtual = 0
+    const MAX_TENTATIVAS = 2
 
-    try {
-      let contadorTarefas = 0
-      let carteiraReceita = '0.00'
-      let caminhoPrintSucesso = ''
-
-      if (conta.plataforma === 'VLM') {
-        console.log('Acessando tela de login VLM...')
-        await page.goto('https://vlm7.com/#/login')
-        await page.waitForTimeout(3000)
-
-        console.log('Preenchendo credenciais VLM...')
-        await page.fill(
-          "input[placeholder='Por favor, digite seu número de telefone']",
-          conta.telefone
+    while (tentativaAtual < MAX_TENTATIVAS) {
+      tentativaAtual++
+      if (tentativaAtual > 1)
+        console.log(
+          `\n⟳ Retentativa ${tentativaAtual}/${MAX_TENTATIVAS} para ${conta.nome}...`
         )
-        await page.fill(
-          "input[placeholder='Por favor, digite a senha de login']",
-          conta.senha
-        )
-        await page.waitForTimeout(1000)
 
-        await page.locator('button:has-text("Fazer login agora")').click()
-        console.log('Comando de Entrar enviado.')
-        await page.waitForTimeout(5000)
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      let _retry = false
 
-        console.log('Lidando com comunicados...')
-        try {
-          // Tenta seletores comuns de botão fechar (x) em plataformas Vue/Vant
-          await page
-            .locator('.close, .van-icon-cross')
-            .first()
-            .click({ timeout: 3000 })
-          await page.waitForTimeout(1000)
-        } catch (e) {}
+      try {
+        let contadorTarefas = 0
+        let carteiraReceita = '0.00'
+        let caminhoPrintSucesso = ''
 
-        // Caso o robô tenha clicado no fundo (na imagem da campanha) por acidente e abrido o artigo:
-        if (page.url().includes('/notice') || page.url().includes('/article')) {
-          console.log(
-            'Navegou para o artigo acidentalmente. Voltando para Home...'
-          )
-          await page.goto('https://vlm7.com/#/home')
-          await page.waitForTimeout(3000)
-        }
-
-        console.log('Iniciando rotina de tarefas VLM...')
-        // Rola um pouco a página para encontrar o botão
-        try {
-          await page.evaluate(() => window.scrollBy(0, 500))
-          await page.waitForTimeout(1000)
-        } catch (e) {}
-
-        await page.getByText('Imagens Mais Recentes').first().click()
-        await page.waitForTimeout(3000)
-
-        let temTarefa = true
-        let falhasConsecutivas = 0
-
-        while (temTarefa) {
-          let botaoEnviar
-          try {
-            botaoEnviar = page
-              .locator('button:has-text("Ver classificação")')
-              .first()
-            await botaoEnviar.waitFor({ state: 'visible', timeout: 5000 })
-          } catch (e) {
-            console.log(
-              `Fim natural das tarefas VLM. Total concluído: ${contadorTarefas}`
-            )
-            temTarefa = false
-            falhasConsecutivas = 0
-            break
-          }
-
-          try {
-            console.log(`Processando tarefa #${contadorTarefas + 1}...`)
-            await botaoEnviar.click()
-
-            console.log(
-              'Aguardando contagem regressiva de 8s + renderização...'
-            )
-            await page.waitForTimeout(15000) // 8s da VLM + margem
-
-            const btnConfirmar = page
-              .locator('button:has-text("Confirmar"):visible')
-              .last()
-            await btnConfirmar.waitFor({ state: 'visible', timeout: 2000 })
-            await btnConfirmar.click({ force: true })
-            await page.waitForTimeout(1500)
-
-            // Verifica qual mensagem apareceu após confirmar as estrelas
-            try {
-              const msgLimite = page
-                .locator('text="O número de vezes de hoje já foi usado"')
-                .first()
-              if (await msgLimite.isVisible()) {
-                console.log(
-                  `Fim das tarefas VLM atingido (Limite diário). Total concluído: ${contadorTarefas}`
-                )
-                temTarefa = false
-                falhasConsecutivas = 0
-                // Fecha o popup do limite e volta para a lista antes de tirar o print
-                try {
-                  await page
-                    .locator('button:has-text("Confirmar"):visible')
-                    .last()
-                    .click({ timeout: 2000 })
-                } catch (e) {}
-                try {
-                  await page
-                    .locator('.van-nav-bar__left, i.van-icon-arrow-left')
-                    .first()
-                    .click({ timeout: 3000 })
-                } catch (e) {
-                  await page.goBack()
-                }
-                await page.waitForTimeout(2000)
-                break
-              }
-            } catch (e) {}
-
-            // Se não foi limite, segue o jogo para a segunda confirmação de sucesso
-            try {
-              // Aguarda a confirmação de que o valor foi recebido
-              const lblSucesso = page.getByText('Valor recebido com sucesso')
-              await lblSucesso.waitFor({ state: 'visible', timeout: 5000 })
-
-              // Clica no botão Confirmar correspondente
-              const btnSucesso = page.getByRole('button', { name: 'Confirmar' })
-              await btnSucesso.click({ force: true })
-              await page.waitForTimeout(1000)
-            } catch (e) {
-              // Ignora se a segunda tela de confirmação não aparecer
-            }
-
-            try {
-              // Verifica se "Ver classificação" já está na tela. Se estiver, significa que o Confirmar já nos trouxe de volta!
-              const btnLista = page
-                .locator('button:has-text("Ver classificação")')
-                .first()
-              if (!(await btnLista.isVisible())) {
-                await page.locator('i').first().click({ timeout: 3000 })
-              }
-            } catch (e) {
-              // Falha silenciosa
-            }
-            await page.waitForTimeout(3000)
-
-            // Sistema de recuperação: se voltou demais e caiu na Home, clica de volta para a lista
-            try {
-              const btnListaFinal = page
-                .locator('button:has-text("Ver classificação")')
-                .first()
-              if (!(await btnListaFinal.isVisible())) {
-                const btnRecentes = page
-                  .getByText('Imagens Mais Recentes')
-                  .first()
-                if (await btnRecentes.isVisible()) {
-                  console.log('Garantindo abertura da lista de tarefas...')
-                  await btnRecentes.click()
-                  await page.waitForTimeout(2000)
-                }
-              }
-            } catch (e) {}
-
-            contadorTarefas++
-            falhasConsecutivas = 0
-            console.log(
-              `  -> Tarefa #${contadorTarefas} concluída com sucesso!`
-            )
-          } catch (e) {
-            falhasConsecutivas++
-            console.log(
-              `⚠️ Falha na execução da tarefa. Tentativa ${falhasConsecutivas} de 2.`
-            )
-
-            if (falhasConsecutivas >= 2) {
-              throw new Error(
-                'Falha ao concluir a tarefa VLM após 2 tentativas. Travamento detectado.'
-              )
-            } else {
-              console.log('Forçando retorno para tentar novamente...')
-              await page.goto('https://vlm7.com/')
-              await page.waitForTimeout(4000)
-              try {
-                await page
-                  .locator('.close, .van-icon-cross')
-                  .first()
-                  .click({ timeout: 2000 })
-              } catch (err) {}
-
-              if (
-                page.url().includes('/notice') ||
-                page.url().includes('/article')
-              ) {
-                await page.goto('https://vlm7.com/#/home')
-                await page.waitForTimeout(3000)
-              }
-
-              try {
-                await page.evaluate(() => window.scrollBy(0, 500))
-                await page.waitForTimeout(1000)
-              } catch (e) {}
-              await page.click('div:has-text("Imagens Mais Recentes")')
-              await page.waitForTimeout(3000)
-            }
-          }
-        }
-
-        try {
-          caminhoPrintSucesso = `sucesso_${conta.nome}.png`
-          await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
-          console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
-        } catch (e) {
-          caminhoPrintSucesso = ''
-        }
-
-        console.log("Indo para 'Meu' para capturar o saldo...")
-        await page.goto('https://vlm7.com/')
-        await page.waitForTimeout(3000)
-        try {
-          await page
-            .locator('.close, .van-icon-cross')
-            .first()
-            .click({ timeout: 2000 })
-        } catch (err) {}
-        if (page.url().includes('/notice') || page.url().includes('/article')) {
-          await page.goto('https://vlm7.com/#/home')
-          await page.waitForTimeout(2000)
-        }
-
-        await page.locator('div:has-text("Meu")').last().click()
-        await page.waitForTimeout(3000)
-
-        const locSaldo = page.locator(
-          'div:has(p:text-is("Receita total(R$)")) > p:first-child'
-        )
-        await locSaldo.waitFor({ state: 'visible', timeout: 10000 })
-
-        const carteiraTexto = await locSaldo.innerText()
-        carteiraReceita = carteiraTexto.replace(/[^0-9.,]/g, '').trim()
-        console.log(`Saldo capturado VLM: ${carteiraReceita}`)
-      } else if (conta.plataforma === 'Signet') {
-        // FLUXO SIGNET (NOVA PLATAFORMA)
-        console.log('Acessando tela de login Signet...')
-        await page.goto('https://m.signet-jewelers-br.top/#/login')
-        await page.waitForTimeout(3000)
-
-        console.log('Tentando preencher credenciais Signet...')
-        try {
-          // Tenta preencher os dois primeiros inputs da tela (geralmente telefone e senha nessas plataformas)
-          const inputs = page.locator('input')
-          if ((await inputs.count()) >= 2) {
-            await inputs.nth(0).fill(conta.telefone)
-            await inputs.nth(1).fill(conta.senha)
-          }
-          await page.waitForTimeout(1000)
-
-          // Tenta clicar no botão de login
-          const botoes = page.locator('button')
-          if ((await botoes.count()) > 0) {
-            await botoes.first().click()
-          }
-          await page.waitForTimeout(3000)
-        } catch (e) {
-          console.log(
-            'Aviso: Não foi possível preencher o login automaticamente. Faça manualmente.'
-          )
-        }
-
-        // Fechar comunicados
-        console.log('Verificando comunicados...')
-        try {
-          const btnConfirmar = page.getByRole('button', { name: 'Confirmar' })
-          await btnConfirmar.waitFor({ state: 'visible', timeout: 5000 })
-          await btnConfirmar.click()
-          await page.waitForTimeout(1000)
-        } catch (e) {
-          console.log('Nenhum comunicado encontrado.')
-        }
-
-        // Check-in Diário (Signet)
-        console.log('Acessando tela de Check-in diário Signet...')
-        try {
-          await page.goto('https://m.signet-jewelers-br.top/#/SignIn')
+        if (conta.plataforma === 'VLM') {
+          console.log('Acessando tela de login VLM...')
+          await page.goto('https://vlm7.com/#/login')
           await page.waitForTimeout(3000)
 
-          // O botão "Entrar" é uma <div> estilizada com fundo preto.
-          // Identificamos que existem dois "Entrar" na tela: o título no topo e o botão real no meio.
-          // O botão real possui a classe de fundo preto (bg-[#1A1A1A]) quando está ativo.
-          console.log(
-            "Procurando botão de Check-in 'Entrar' com estilo específico..."
+          console.log('Preenchendo credenciais VLM...')
+          await page.fill(
+            "input[placeholder='Por favor, digite seu número de telefone']",
+            conta.telefone
           )
+          await page.fill(
+            "input[placeholder='Por favor, digite a senha de login']",
+            conta.senha
+          )
+          await page.waitForTimeout(1000)
 
-          const btnReal = page
-            .locator('div.bg-\\[\\#1A1A1A\\]:has-text("Entrar")')
-            .first()
+          await page.locator('button:has-text("Fazer login agora")').click()
+          console.log('Comando de Entrar enviado.')
+          await page.waitForTimeout(5000)
 
-          if (await btnReal.isVisible({ timeout: 5000 })) {
-            console.log("Botão 'Entrar' encontrado. Clicando...")
-            await btnReal.click()
-            await page.waitForTimeout(3000)
-
-            // Verifica se o botão mudou para cinza (bg-[#c2c2c2]), confirmando o sucesso
-            const btnConfirmado = page
-              .locator('div.bg-\\[\\#c2c2c2\\]:has-text("Entrar")')
-              .first()
-            if (await btnConfirmado.isVisible({ timeout: 5000 })) {
-              contadorTarefas++
-              console.log(
-                '  -> Check-in Signet realizado e confirmado com sucesso!'
-              )
-            } else {
-              console.log(
-                '  -> Botão clicado, mas confirmação visual (mudança para cinza) não detectada.'
-              )
-              // Incrementamos mesmo assim pois o clique foi dado no botão correto
-              contadorTarefas++
-            }
-          } else {
-            // Verifica se o botão já está cinza (check-in já feito hoje)
-            const btnJaFeito = page
-              .locator('div.bg-\\[\\#c2c2c2\\]:has-text("Entrar")')
-              .first()
-            if (await btnJaFeito.isVisible({ timeout: 2000 })) {
-              console.log(
-                '  -> Check-in Signet já havia sido realizado hoje (botão cinza).'
-              )
-            } else {
-              console.log(
-                "  -> Botão 'Entrar' ativo não encontrado. Verificando se há diálogos de sucesso..."
-              )
-              try {
-                const btnOk = page
-                  .getByRole('button', { name: /Ok|Confirmar|Sucesso/i })
-                  .first()
-                if (await btnOk.isVisible({ timeout: 2000 })) {
-                  await btnOk.click()
-                  contadorTarefas++
-                  console.log(
-                    '  -> Check-in concluído via diálogo de confirmação.'
-                  )
-                } else {
-                  console.log('  -> Nenhum botão de check-in detectado.')
-                }
-              } catch (err) {
-                console.log(
-                  '  -> Falha ao procurar elementos alternativos de check-in.'
-                )
-              }
-            }
-          }
-
-          console.log('Voltando para a tela principal...')
+          console.log('Lidando com comunicados...')
           try {
+            // Tenta seletores comuns de botão fechar (x) em plataformas Vue/Vant
             await page
-              .locator('i.van-icon-arrow-left, .van-nav-bar__left')
+              .locator('.close, .van-icon-cross')
               .first()
               .click({ timeout: 3000 })
-          } catch (e) {
-            await page.goBack()
-          }
-          await page.waitForTimeout(2000)
-        } catch (e) {
-          console.log('Aviso: Falha no check-in diário Signet:', e.message)
-        }
+            await page.waitForTimeout(1000)
+          } catch (e) {}
 
-        // Receber Renda (Tarefas)
-        console.log('Indo para o menu de perfil...')
-        try {
-          await page
-            .locator('div:nth-child(5) > .van-badge__wrapper > .w-24')
-            .first()
-            .click({ timeout: 5000 })
-          await page.waitForTimeout(3000)
-
-          console.log("Acessando 'Receber Renda'...")
-          await page.getByText('Receber Renda').first().click({ timeout: 5000 })
-          await page.waitForTimeout(3000)
-
-          let recebendo = true
-          while (recebendo) {
-            try {
-              const btnReceived = page
-                .getByRole('button', { name: 'Received' })
-                .first()
-              await btnReceived.waitFor({ state: 'visible', timeout: 3000 })
-              await btnReceived.click()
-              contadorTarefas++
-              console.log(
-                `  -> Renda #${contadorTarefas} recebida com sucesso!`
-              )
-              await page.waitForTimeout(2000)
-            } catch (e) {
-              console.log('Fim das rendas disponíveis.')
-              recebendo = false
-            }
-          }
-
-          console.log('Voltando para o perfil...')
-          await page.locator('i').first().click({ timeout: 3000 })
-          await page.waitForTimeout(3000)
-
-          console.log('Capturando saldo...')
-          try {
-            const bodyText = await page.innerText('body')
-            const match = bodyText.match(/([\d.,]+)\s*Carteira da Equipe/i)
-            if (match && match[1]) {
-              carteiraReceita = match[1]
-            } else {
-              const locSaldo = page
-                .locator(':has-text("Carteira da Equipe")')
-                .last()
-              const texto = await locSaldo.innerText()
-              carteiraReceita = texto.replace(/[^0-9.,]/g, '').trim()
-            }
-            console.log(`Saldo capturado Signet: ${carteiraReceita}`)
-          } catch (e) {
-            console.log('Não foi possível capturar o saldo:', e.message)
-          }
-        } catch (e) {
-          console.log('Falha na rotina de perfil (Receber Renda).', e.message)
-        }
-
-        try {
-          caminhoPrintSucesso = `sucesso_${conta.nome}.png`
-          await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
-          console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
-        } catch (e) {
-          caminhoPrintSucesso = ''
-        }
-      } else if (conta.plataforma === 'GKWind') {
-        // FLUXO GK WIND
-        console.log('Acessando tela de login GK Wind...')
-        await page.goto('https://gkwindbr.com/login/')
-        await page.waitForTimeout(3000)
-
-        console.log('Preenchendo credenciais GK Wind...')
-        try {
-          const inputs = page.locator('input')
-          if ((await inputs.count()) >= 2) {
-            // Limpa os campos antes de preencher para evitar duplicação por autofill
-            await inputs.nth(0).click()
-            await page.keyboard.press('Control+A')
-            await page.keyboard.press('Backspace')
-            await inputs.nth(0).fill(conta.telefone)
-
-            await inputs.nth(1).click()
-            await page.keyboard.press('Control+A')
-            await page.keyboard.press('Backspace')
-            await inputs.nth(1).fill(conta.senha)
-          }
-          await page.waitForTimeout(1000)
-
-          await page
-            .getByRole('button', { name: 'Entrar' })
-            .first()
-            .click({ timeout: 5000 })
-          await page.waitForTimeout(4000)
-
-          // Verifica se houve erro de login
-          const erroLogin = page.getByText(/E-mail ou senha inválidos/i)
-          if (await erroLogin.isVisible({ timeout: 2000 })) {
+          // Caso o robô tenha clicado no fundo (na imagem da campanha) por acidente e abrido o artigo:
+          if (
+            page.url().includes('/notice') ||
+            page.url().includes('/article')
+          ) {
             console.log(
-              `🚨 Erro de login na GK Wind (${conta.nome}): E-mail ou senha inválidos.`
+              'Navegou para o artigo acidentalmente. Voltando para Home...'
             )
-            // Tenta fechar o modal de erro para não travar
-            try {
-              await page.getByRole('button', { name: /Ok|Confirmar/i }).click()
-            } catch (e) {}
-            continue // Pula para a próxima conta
+            await page.goto('https://vlm7.com/#/home')
+            await page.waitForTimeout(3000)
           }
-        } catch (e) {
-          console.log('Aviso: Falha no login automático GK Wind:', e.message)
-        }
 
-        console.log('Aguardando comunicado de login...')
-        try {
-          // Clicando no botão de fechar do comunicado (X ou Fechar)
-          // O botão geralmente é uma div ou botão com texto "Fechar" ou um ícone de fechar
-          const btnFechar = page
-            .locator(
-              'button:has-text("Fechar"), .close-btn, [aria-label="Close"]'
-            )
-            .first()
-          await btnFechar.waitFor({ state: 'visible', timeout: 8000 })
-          await btnFechar.click()
-          console.log('Comunicado fechado.')
-          await page.waitForTimeout(1500)
-        } catch (e) {
-          console.log('Nenhum comunicado encontrado ou já fechado.')
-        }
-
-        // DEFESA: Se ele foi para uma página em branco ou artigo por clique acidental, nós forçamos a volta
-        try {
-          await page
-            .getByText(/Check-in Diário/i)
-            .first()
-            .waitFor({ state: 'visible', timeout: 3000 })
-        } catch (e) {
-          console.log(
-            'Redirecionamento acidental detectado! Forçando retorno para a página inicial...'
-          )
-          await page.goto('https://gkwindbr.com/')
-          await page.waitForTimeout(4000)
+          console.log('Iniciando rotina de tarefas VLM...')
+          // Rola um pouco a página para encontrar o botão
           try {
-            await page
-              .getByRole('button', { name: 'Fechar' })
-              .click({ timeout: 2000 })
-          } catch (err) {}
-        }
+            await page.evaluate(() => window.scrollBy(0, 500))
+            await page.waitForTimeout(1000)
+          } catch (e) {}
 
-        console.log('Acessando Check-in Diário GK Wind...')
-        try {
-          await page.goto('https://gkwindbr.com/checkin/')
+          await page.getByText('Imagens Mais Recentes').first().click()
           await page.waitForTimeout(3000)
 
-          console.log("Tentando clicar no botão 'Fazer Check-in Agora'...")
-          const btnCheckin = page
-            .getByRole('button', { name: 'Fazer Check-in Agora' })
-            .first()
-          if (await btnCheckin.isVisible({ timeout: 5000 })) {
-            await btnCheckin.click()
-            await page.waitForTimeout(2000)
+          let temTarefa = true
+          let falhasConsecutivas = 0
+
+          while (temTarefa) {
+            let botaoEnviar
+            try {
+              botaoEnviar = page
+                .locator('button:has-text("Ver classificação")')
+                .first()
+              await botaoEnviar.waitFor({ state: 'visible', timeout: 5000 })
+            } catch (e) {
+              console.log(
+                `Fim natural das tarefas VLM. Total concluído: ${contadorTarefas}`
+              )
+              temTarefa = false
+              falhasConsecutivas = 0
+              break
+            }
+
+            try {
+              console.log(`Processando tarefa #${contadorTarefas + 1}...`)
+              await botaoEnviar.click()
+
+              console.log(
+                'Aguardando contagem regressiva de 8s + renderização...'
+              )
+              await page.waitForTimeout(15000) // 8s da VLM + margem
+
+              const btnConfirmar = page
+                .locator('button:has-text("Confirmar"):visible')
+                .last()
+              await btnConfirmar.waitFor({ state: 'visible', timeout: 2000 })
+              await btnConfirmar.click({ force: true })
+              await page.waitForTimeout(1500)
+
+              // Verifica qual mensagem apareceu após confirmar as estrelas
+              try {
+                const msgLimite = page
+                  .locator('text="O número de vezes de hoje já foi usado"')
+                  .first()
+                if (await msgLimite.isVisible()) {
+                  console.log(
+                    `Fim das tarefas VLM atingido (Limite diário). Total concluído: ${contadorTarefas}`
+                  )
+                  temTarefa = false
+                  falhasConsecutivas = 0
+                  // Fecha o popup do limite e volta para a lista antes de tirar o print
+                  try {
+                    await page
+                      .locator('button:has-text("Confirmar"):visible')
+                      .last()
+                      .click({ timeout: 2000 })
+                  } catch (e) {}
+                  try {
+                    await page
+                      .locator('.van-nav-bar__left, i.van-icon-arrow-left')
+                      .first()
+                      .click({ timeout: 3000 })
+                  } catch (e) {
+                    await page.goBack()
+                  }
+                  await page.waitForTimeout(2000)
+                  break
+                }
+              } catch (e) {}
+
+              // Se não foi limite, segue o jogo para a segunda confirmação de sucesso
+              try {
+                // Aguarda a confirmação de que o valor foi recebido
+                const lblSucesso = page.getByText('Valor recebido com sucesso')
+                await lblSucesso.waitFor({ state: 'visible', timeout: 5000 })
+
+                // Clica no botão Confirmar correspondente
+                const btnSucesso = page.getByRole('button', {
+                  name: 'Confirmar'
+                })
+                await btnSucesso.click({ force: true })
+                await page.waitForTimeout(1000)
+              } catch (e) {
+                // Ignora se a segunda tela de confirmação não aparecer
+              }
+
+              try {
+                // Verifica se "Ver classificação" já está na tela. Se estiver, significa que o Confirmar já nos trouxe de volta!
+                const btnLista = page
+                  .locator('button:has-text("Ver classificação")')
+                  .first()
+                if (!(await btnLista.isVisible())) {
+                  await page.locator('i').first().click({ timeout: 3000 })
+                }
+              } catch (e) {
+                // Falha silenciosa
+              }
+              await page.waitForTimeout(3000)
+
+              // Sistema de recuperação: se voltou demais e caiu na Home, clica de volta para a lista
+              try {
+                const btnListaFinal = page
+                  .locator('button:has-text("Ver classificação")')
+                  .first()
+                if (!(await btnListaFinal.isVisible())) {
+                  const btnRecentes = page
+                    .getByText('Imagens Mais Recentes')
+                    .first()
+                  if (await btnRecentes.isVisible()) {
+                    console.log('Garantindo abertura da lista de tarefas...')
+                    await btnRecentes.click()
+                    await page.waitForTimeout(2000)
+                  }
+                }
+              } catch (e) {}
+
+              contadorTarefas++
+              falhasConsecutivas = 0
+              console.log(
+                `  -> Tarefa #${contadorTarefas} concluída com sucesso!`
+              )
+            } catch (e) {
+              falhasConsecutivas++
+              console.log(
+                `⚠️ Falha na execução da tarefa. Tentativa ${falhasConsecutivas} de 2.`
+              )
+
+              if (falhasConsecutivas >= 2) {
+                throw new Error(
+                  'Falha ao concluir a tarefa VLM após 2 tentativas. Travamento detectado.'
+                )
+              } else {
+                console.log('Forçando retorno para tentar novamente...')
+                await page.goto('https://vlm7.com/')
+                await page.waitForTimeout(4000)
+                try {
+                  await page
+                    .locator('.close, .van-icon-cross')
+                    .first()
+                    .click({ timeout: 2000 })
+                } catch (err) {}
+
+                if (
+                  page.url().includes('/notice') ||
+                  page.url().includes('/article')
+                ) {
+                  await page.goto('https://vlm7.com/#/home')
+                  await page.waitForTimeout(3000)
+                }
+
+                try {
+                  await page.evaluate(() => window.scrollBy(0, 500))
+                  await page.waitForTimeout(1000)
+                } catch (e) {}
+                await page.click('div:has-text("Imagens Mais Recentes")')
+                await page.waitForTimeout(3000)
+              }
+            }
+          }
+
+          console.log('Navegando para perfil VLM para capturar saldo...')
+          await page.goto('https://vlm7.com/#/user')
+          await page.waitForTimeout(3000)
+
+          const locSaldo = page.locator(
+            'div:has(p:text-is("Receita total(R$)")) > p:first-child'
+          )
+          await locSaldo.waitFor({ state: 'visible', timeout: 10000 })
+
+          const carteiraTexto = await locSaldo.innerText()
+          carteiraReceita = carteiraTexto.replace(/[^0-9.,]/g, '').trim()
+          console.log(`Saldo capturado VLM: ${carteiraReceita}`)
+
+          try {
+            caminhoPrintSucesso = `sucesso_${conta.nome}.png`
+            await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
+            console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
+          } catch (e) {
+            caminhoPrintSucesso = ''
+          }
+        } else if (conta.plataforma === 'Signet') {
+          // FLUXO SIGNET (NOVA PLATAFORMA)
+          console.log('Acessando tela de login Signet...')
+          await page.goto('https://m.signet-jewelers-br.top/#/login')
+          await page.waitForTimeout(3000)
+
+          console.log('Tentando preencher credenciais Signet...')
+          try {
+            // Tenta preencher os dois primeiros inputs da tela (geralmente telefone e senha nessas plataformas)
+            const inputs = page.locator('input')
+            if ((await inputs.count()) >= 2) {
+              await inputs.nth(0).fill(conta.telefone)
+              await inputs.nth(1).fill(conta.senha)
+            }
+            await page.waitForTimeout(1000)
+
+            // Tenta clicar no botão de login
+            const botoes = page.locator('button')
+            if ((await botoes.count()) > 0) {
+              await botoes.first().click()
+            }
+            await page.waitForTimeout(3000)
+          } catch (e) {
+            console.log(
+              'Aviso: Não foi possível preencher o login automaticamente. Faça manualmente.'
+            )
+          }
+
+          // Fechar comunicados
+          console.log('Verificando comunicados...')
+          try {
+            const btnConfirmar = page.getByRole('button', { name: 'Confirmar' })
+            await btnConfirmar.waitFor({ state: 'visible', timeout: 5000 })
+            await btnConfirmar.click()
+            await page.waitForTimeout(1000)
+          } catch (e) {
+            console.log('Nenhum comunicado encontrado.')
+          }
+
+          // Check-in Diário (Signet)
+          console.log('Acessando tela de Check-in diário Signet...')
+          try {
+            await page.goto('https://m.signet-jewelers-br.top/#/SignIn')
+            await page.waitForTimeout(3000)
+
+            // O botão "Entrar" é uma <div> estilizada com fundo preto.
+            // Identificamos que existem dois "Entrar" na tela: o título no topo e o botão real no meio.
+            // O botão real possui a classe de fundo preto (bg-[#1A1A1A]) quando está ativo.
+            console.log(
+              "Procurando botão de Check-in 'Entrar' com estilo específico..."
+            )
+
+            const btnReal = page
+              .locator('div.bg-\\[\\#1A1A1A\\]:has-text("Entrar")')
+              .first()
+
+            if (await btnReal.isVisible({ timeout: 5000 })) {
+              console.log("Botão 'Entrar' encontrado. Clicando...")
+              await btnReal.click()
+              await page.waitForTimeout(3000)
+
+              // Verifica se o botão mudou para cinza (bg-[#c2c2c2]), confirmando o sucesso
+              const btnConfirmado = page
+                .locator('div.bg-\\[\\#c2c2c2\\]:has-text("Entrar")')
+                .first()
+              if (await btnConfirmado.isVisible({ timeout: 5000 })) {
+                contadorTarefas++
+                console.log(
+                  '  -> Check-in Signet realizado e confirmado com sucesso!'
+                )
+              } else {
+                console.log(
+                  '  -> Botão clicado, mas confirmação visual (mudança para cinza) não detectada.'
+                )
+                // Incrementamos mesmo assim pois o clique foi dado no botão correto
+                contadorTarefas++
+              }
+            } else {
+              // Verifica se o botão já está cinza (check-in já feito hoje)
+              const btnJaFeito = page
+                .locator('div.bg-\\[\\#c2c2c2\\]:has-text("Entrar")')
+                .first()
+              if (await btnJaFeito.isVisible({ timeout: 2000 })) {
+                console.log(
+                  '  -> Check-in Signet já havia sido realizado hoje (botão cinza).'
+                )
+              } else {
+                console.log(
+                  "  -> Botão 'Entrar' ativo não encontrado. Verificando se há diálogos de sucesso..."
+                )
+                try {
+                  const btnOk = page
+                    .getByRole('button', { name: /Ok|Confirmar|Sucesso/i })
+                    .first()
+                  if (await btnOk.isVisible({ timeout: 2000 })) {
+                    await btnOk.click()
+                    contadorTarefas++
+                    console.log(
+                      '  -> Check-in concluído via diálogo de confirmação.'
+                    )
+                  } else {
+                    console.log('  -> Nenhum botão de check-in detectado.')
+                  }
+                } catch (err) {
+                  console.log(
+                    '  -> Falha ao procurar elementos alternativos de check-in.'
+                  )
+                }
+              }
+            }
+
+            console.log('Voltando para a tela principal...')
             try {
               await page
-                .getByRole('button', { name: /Confirmar/i })
+                .locator('i.van-icon-arrow-left, .van-nav-bar__left')
                 .first()
                 .click({ timeout: 3000 })
-              await page.waitForTimeout(1000)
-            } catch (e) {}
-            contadorTarefas++
-            console.log('  -> Check-in GK Wind realizado com sucesso!')
-          } else {
-            console.log(
-              '  -> Botão de check-in não visível. Provavelmente já feito hoje.'
-            )
-          }
-        } catch (e) {
-          console.log('Aviso: Falha na etapa de Check-in GK Wind:', e.message)
-        }
-
-        console.log('Acessando Perfil...')
-        try {
-          try {
-            // Tentando como 'link' que é muito mais preciso para abas inferiores
-            await page
-              .getByRole('link', { name: 'Perfil' })
-              .first()
-              .click({ timeout: 4000 })
-          } catch (e) {
-            console.log('Tentando voltar para acessar o Perfil...')
-            try {
-              await page.locator('i').first().click({ timeout: 2000 })
-            } catch (err) {
+            } catch (e) {
               await page.goBack()
             }
             await page.waitForTimeout(2000)
+          } catch (e) {
+            console.log('Aviso: Falha no check-in diário Signet:', e.message)
+          }
+
+          // Receber Renda (Tarefas)
+          console.log('Indo para o menu de perfil...')
+          try {
             await page
-              .getByRole('link', { name: 'Perfil' })
+              .locator('div:nth-child(5) > .van-badge__wrapper > .w-24')
               .first()
               .click({ timeout: 5000 })
-          }
-          await page.waitForTimeout(3000)
+            await page.waitForTimeout(3000)
 
-          console.log('Capturando Saldo Total...')
-          const bodyText = await page.innerText('body')
-          const match = bodyText.match(
-            /([\d.,]+)\s*Saldo Total|Saldo Total[\s:R$]*([\d.,]+)/i
-          )
-          if (match) {
-            carteiraReceita = match[1] || match[2]
-          } else {
-            // Fallback que busca o elemento irmão
-            const saldoTxt = await page
-              .locator('div')
-              .filter({ hasText: /^Saldo Total$/ })
-              .locator('xpath=preceding-sibling::div')
-              .innerText()
-            carteiraReceita = saldoTxt.replace(/[^0-9.,]/g, '').trim()
-          }
-          console.log(`Saldo capturado GK Wind: ${carteiraReceita}`)
-        } catch (e) {
-          console.log('Falha ao acessar Perfil ou capturar Saldo.', e.message)
-        }
-
-        try {
-          caminhoPrintSucesso = `sucesso_${conta.nome}.png`
-          await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
-          console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
-        } catch (e) {
-          caminhoPrintSucesso = ''
-        }
-      } else if (conta.plataforma === 'Arla') {
-        // FLUXO ARLA
-        console.log('Acessando tela de login Arla...')
-        await page.goto('https://arlavt.com/m/login')
-        await page.waitForTimeout(3000)
-
-        console.log('Preenchendo credenciais Arla...')
-        try {
-          const inputs = page.locator('input')
-          if ((await inputs.count()) >= 2) {
-            // Limpa campos
-            await inputs.nth(0).fill('')
-            await inputs.nth(0).fill(conta.telefone)
-            await inputs.nth(1).fill('')
-            await inputs.nth(1).fill(conta.senha)
-          }
-          await page.waitForTimeout(1000)
-
-          const btnLogin = page
-            .locator(
-              'button:has-text("Entrar"), button:has-text("Login"), .van-button'
-            )
-            .first()
-          await btnLogin.click()
-          await page.waitForTimeout(5000)
-        } catch (e) {
-          console.log('Aviso: Falha no preenchimento de login Arla.')
-        }
-
-        // 1. Fechar comunicados (Notificação do sistema)
-        console.log('Fechando comunicados Arla...')
-        try {
-          // O seletor .van-dialog__confirm é o padrão para botões "confirme" em diálogos Vant
-          const btnConfirme = page
-            .locator('.van-dialog__confirm, button:has-text("confirme")')
-            .first()
-          if (await btnConfirme.isVisible({ timeout: 10000 })) {
-            await btnConfirme.click()
-            console.log('Comunicado Arla fechado.')
-            await page.waitForTimeout(2000)
-          }
-
-          // Espera o overlay desaparecer para evitar bloqueio de clique
-          try {
-            await page.waitForSelector('.van-overlay', {
-              state: 'hidden',
-              timeout: 5000
-            })
-          } catch (e) {
-            console.log('Aviso: Overlay ainda presente ou não encontrado.')
-          }
-        } catch (e) {
-          console.log('Erro ao fechar comunicados Arla:', e.message)
-        }
-
-        // 2. Menu Fazenda e Alimentação
-        try {
-          console.log('Indo para Fazenda...')
-          await page.getByText('fazenda').click()
-          await page.waitForTimeout(3000)
-
-          console.log('Clicando em Alimentação (1)...')
-          await page
-            .getByRole('button', { name: 'Alimentação' })
-            .first()
-            .click()
-          await page.waitForTimeout(3000)
-
-          console.log('Clicando em Alimentação (2)...')
-          await page
-            .getByRole('button', { name: 'Alimentação' })
-            .first()
-            .click()
-          await page.waitForTimeout(3000)
-
-          console.log('Confirmando ação de alimentação...')
-          await page.getByRole('button', { name: 'confirme' }).click()
-          await page.waitForTimeout(2000)
-
-          contadorTarefas++
-          console.log('  -> Tarefa de Alimentação concluída!')
-        } catch (e) {
-          console.log('Aviso: Falha na tarefa de Alimentação Arla:', e.message)
-        }
-
-        // 3. Check-in Diário
-        try {
-          console.log('Indo para o perfil via URL...')
-          await page.goto('https://arlavt.com/m/user/index')
-          await page.waitForTimeout(3000)
-
-          console.log('Acessando área de Check-in...')
-          await page.getByRole('button', { name: 'Faça login' }).click()
-          await page.waitForTimeout(3000)
-
-          console.log('Realizando Check-in...')
-          await page
-            .getByRole('button', { name: 'Clique para fazer login' })
-            .click()
-          await page.waitForTimeout(3000)
-          contadorTarefas++
-          console.log('  -> Check-in realizado!')
-        } catch (e) {
-          console.log('Aviso: Falha no Check-in Arla:', e.message)
-        }
-
-        // 4. Captura de Saldo e Print
-        try {
-          console.log('Acessando o perfil via URL para capturar saldo...')
-          await page.goto('https://arlavt.com/m/user/index')
-          await page.waitForTimeout(4000)
-
-          caminhoPrintSucesso = `sucesso_${conta.nome}.png`
-          await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
-
-          const bodyText = await page.innerText('body')
-          const match = bodyText.match(/GTQ\s*([\d.,]+)/i)
-          if (match) {
-            carteiraReceita = match[1]
-          } else {
-            const locSaldo = page.getByText(/GTQ\s*[\d.,]+/).first()
-            const texto = await locSaldo.innerText()
-            carteiraReceita = texto.replace(/GTQ/i, '').trim()
-          }
-          console.log(`Saldo capturado Arla: ${carteiraReceita}`)
-        } catch (e) {
-          console.log(
-            'Aviso: Falha ao capturar saldo ou print Arla:',
-            e.message
-          )
-        }
-      } else {
-        // FLUXO ROYAL AURUM
-        console.log('Acessando tela de login Royal Aurum...')
-        await page.goto('https://royalaurum0931.com/login')
-        await page.waitForTimeout(3000)
-
-        console.log('Preenchendo credenciais...')
-        await page.fill('input[placeholder="(11) 99999-9999"]', conta.telefone)
-        await page.fill('input[placeholder="Senha"]', conta.senha)
-        await page.waitForTimeout(1000)
-
-        await page.locator('button:has-text("Entrar")').click()
-        console.log('Comando de Entrar enviado.')
-
-        await page.waitForTimeout(5000)
-
-        // ==========================================
-        // 3. VERIFICAR COMUNICADOS
-        // ==========================================
-
-        console.log('Verificando se há comunicados especiais (Ver detalhes)...')
-        try {
-          const botaoDetalhes = page.getByRole('button', {
-            name: 'Ver detalhes'
-          })
-          await botaoDetalhes.waitFor({ state: 'visible', timeout: 2000 })
-
-          console.log("Aviso especial detectado! Clicando em 'Ver detalhes'...")
-          await botaoDetalhes.click()
-
-          console.log("Aguardando liberação do botão 'Voltar' (aprox. 10s)...")
-          const botaoVoltar = page.getByRole('button', { name: 'Voltar' })
-          await botaoVoltar.waitFor({ state: 'visible', timeout: 10000 })
-          await botaoVoltar.click()
-
-          console.log('Retornou do aviso especial com sucesso.')
-          await page.waitForTimeout(2000)
-        } catch (e) {
-          console.log('Nenhum aviso especial encontrado. Seguindo...')
-        }
-
-        console.log('Verificando se há comunicados normais na tela...')
-        let comunicadosFechados = 0
-        while (true) {
-          try {
-            const botaoFechar = page.locator('.close').first()
-            await botaoFechar.waitFor({ state: 'visible', timeout: 4000 })
-            await botaoFechar.click({ force: true })
-            comunicadosFechados++
-            console.log(`Comunicado #${comunicadosFechados} fechado.`)
-            await page.waitForTimeout(1500)
-          } catch (e) {
-            if (comunicadosFechados > 0) {
-              console.log(
-                `Total de comunicados fechados: ${comunicadosFechados}. Seguindo...`
-              )
-            } else {
-              console.log('Nenhum comunicado normal encontrado. Seguindo...')
-            }
-            break
-          }
-        }
-
-        // ==========================================
-        // 4. ROTINA DE TAREFAS (SEU LOOP)
-        // ==========================================
-
-        console.log('Iniciando rotina de tarefas...')
-        await page.click('a:has-text("Tarefa")')
-        await page.waitForTimeout(2000)
-
-        let temTarefa = true
-        let falhasConsecutivas = 0
-
-        while (temTarefa) {
-          let botaoEnviar
-          try {
-            botaoEnviar = page
-              .locator('button:has-text("Iniciar Tarefa")')
+            console.log("Acessando 'Receber Renda'...")
+            await page
+              .getByText('Receber Renda')
               .first()
-            await botaoEnviar.waitFor({ state: 'visible', timeout: 5000 })
+              .click({ timeout: 5000 })
+            await page.waitForTimeout(3000)
+
+            let recebendo = true
+            while (recebendo) {
+              try {
+                const btnReceived = page
+                  .getByRole('button', { name: 'Received' })
+                  .first()
+                await btnReceived.waitFor({ state: 'visible', timeout: 3000 })
+                await btnReceived.click()
+                contadorTarefas++
+                console.log(
+                  `  -> Renda #${contadorTarefas} recebida com sucesso!`
+                )
+                await page.waitForTimeout(2000)
+              } catch (e) {
+                console.log('Fim das rendas disponíveis.')
+                recebendo = false
+              }
+            }
+
+            console.log('Voltando para o perfil...')
+            await page.locator('i').first().click({ timeout: 3000 })
+            await page.waitForTimeout(3000)
+
+            console.log('Capturando saldo...')
+            try {
+              const bodyText = await page.innerText('body')
+              const match = bodyText.match(/([\d.,]+)\s*Carteira da Equipe/i)
+              if (match && match[1]) {
+                carteiraReceita = match[1]
+              } else {
+                const locSaldo = page
+                  .locator(':has-text("Carteira da Equipe")')
+                  .last()
+                const texto = await locSaldo.innerText()
+                carteiraReceita = texto.replace(/[^0-9.,]/g, '').trim()
+              }
+              console.log(`Saldo capturado Signet: ${carteiraReceita}`)
+            } catch (e) {
+              console.log('Não foi possível capturar o saldo:', e.message)
+            }
           } catch (e) {
-            console.log(
-              `Fim natural das tarefas. Total concluído: ${contadorTarefas}`
-            )
-            temTarefa = false
-            falhasConsecutivas = 0
-            break
+            console.log('Falha na rotina de perfil (Receber Renda).', e.message)
           }
 
           try {
-            console.log(`Processando tarefa #${contadorTarefas + 1}...`)
-            await botaoEnviar.click()
+            caminhoPrintSucesso = `sucesso_${conta.nome}.png`
+            await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
+            console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
+          } catch (e) {
+            caminhoPrintSucesso = ''
+          }
+        } else if (conta.plataforma === 'GKWind') {
+          // FLUXO GK WIND
+          console.log('Acessando tela de login GK Wind...')
+          await page.goto('https://gkwindbr.com/login/')
+          await page.waitForTimeout(3000)
 
-            await page
-              .locator('button[aria-label="5 estrelas"]')
-              .waitFor({ state: 'visible', timeout: 15000 })
-            await page
-              .locator('button[aria-label="5 estrelas"]')
-              .click({ force: true })
+          console.log('Preenchendo credenciais GK Wind...')
+          try {
+            const inputs = page.locator('input')
+            if ((await inputs.count()) >= 2) {
+              // Limpa os campos antes de preencher para evitar duplicação por autofill
+              await inputs.nth(0).click()
+              await page.keyboard.press('Control+A')
+              await page.keyboard.press('Backspace')
+              await inputs.nth(0).fill(conta.telefone)
+
+              await inputs.nth(1).click()
+              await page.keyboard.press('Control+A')
+              await page.keyboard.press('Backspace')
+              await inputs.nth(1).fill(conta.senha)
+            }
             await page.waitForTimeout(1000)
 
             await page
-              .locator('button:has-text("Receber Recompensa")')
+              .getByRole('button', { name: 'Entrar' })
+              .first()
+              .click({ timeout: 5000 })
+            await page.waitForTimeout(4000)
+
+            // Verifica se houve erro de login
+            const erroLogin = page.getByText(/E-mail ou senha inválidos/i)
+            if (await erroLogin.isVisible({ timeout: 2000 })) {
+              console.log(
+                `🚨 Erro de login na GK Wind (${conta.nome}): E-mail ou senha inválidos.`
+              )
+              // Tenta fechar o modal de erro para não travar
+              try {
+                await page
+                  .getByRole('button', { name: /Ok|Confirmar/i })
+                  .click()
+              } catch (e) {}
+              continue // Pula para a próxima conta
+            }
+          } catch (e) {
+            console.log('Aviso: Falha no login automático GK Wind:', e.message)
+          }
+
+          // Troca de idioma para Português (caso esteja em Inglês)
+          try {
+            const btnSwitchLang = page.getByRole('button', {
+              name: 'Switch Language'
+            })
+            const emIngles = await btnSwitchLang
+              .isVisible({ timeout: 3000 })
+              .catch(() => false)
+
+            if (emIngles) {
+              console.log('Idioma em Inglês. Trocando para Português...')
+              await btnSwitchLang.click()
+              await page.waitForTimeout(1000)
+              await page.getByRole('option', { name: 'Português' }).click()
+              console.log(
+                'Idioma alterado para Português. Aguardando recarregamento...'
+              )
+              await page.waitForTimeout(3000)
+            } else {
+              console.log('Idioma já está em Português.')
+            }
+          } catch (e) {
+            console.log(
+              'Aviso: Falha ao verificar/trocar idioma GK Wind:',
+              e.message
+            )
+          }
+
+          console.log('Aguardando comunicado de login...')
+          try {
+            // Clicando no botão de fechar do comunicado (X ou Fechar)
+            // O botão geralmente é uma div ou botão com texto "Fechar" ou um ícone de fechar
+            const btnFechar = page
+              .locator(
+                'button:has-text("Fechar"), .close-btn, [aria-label="Close"]'
+              )
+              .first()
+            await btnFechar.waitFor({ state: 'visible', timeout: 8000 })
+            await btnFechar.click()
+            console.log('Comunicado fechado.')
+            await page.waitForTimeout(1500)
+          } catch (e) {
+            console.log('Nenhum comunicado encontrado ou já fechado.')
+          }
+
+          // DEFESA: Se ele foi para uma página em branco ou artigo por clique acidental, nós forçamos a volta
+          try {
+            await page
+              .getByText(/Check-in Diário/i)
+              .first()
+              .waitFor({ state: 'visible', timeout: 3000 })
+          } catch (e) {
+            console.log(
+              'Redirecionamento acidental detectado! Forçando retorno para a página inicial...'
+            )
+            await page.goto('https://gkwindbr.com/')
+            await page.waitForTimeout(4000)
+            try {
+              await page
+                .getByRole('button', { name: 'Fechar' })
+                .click({ timeout: 2000 })
+            } catch (err) {}
+          }
+
+          console.log('Acessando Check-in Diário GK Wind...')
+          try {
+            await page.goto('https://gkwindbr.com/checkin/')
+            await page.waitForTimeout(3000)
+
+            console.log("Tentando clicar no botão 'Fazer Check-in Agora'...")
+            const btnCheckin = page
+              .getByRole('button', { name: 'Fazer Check-in Agora' })
+              .first()
+            if (await btnCheckin.isVisible({ timeout: 5000 })) {
+              await btnCheckin.click()
+              await page.waitForTimeout(2000)
+              try {
+                await page
+                  .getByRole('button', { name: /Confirmar/i })
+                  .first()
+                  .click({ timeout: 3000 })
+                await page.waitForTimeout(1000)
+              } catch (e) {}
+              contadorTarefas++
+              console.log('  -> Check-in GK Wind realizado com sucesso!')
+            } else {
+              console.log(
+                '  -> Botão de check-in não visível. Provavelmente já feito hoje.'
+              )
+            }
+          } catch (e) {
+            console.log('Aviso: Falha na etapa de Check-in GK Wind:', e.message)
+          }
+
+          console.log('Acessando Perfil...')
+          try {
+            try {
+              // Tentando como 'link' que é muito mais preciso para abas inferiores
+              await page
+                .getByRole('link', { name: 'Perfil' })
+                .first()
+                .click({ timeout: 4000 })
+            } catch (e) {
+              console.log('Tentando voltar para acessar o Perfil...')
+              try {
+                await page.locator('i').first().click({ timeout: 2000 })
+              } catch (err) {
+                await page.goBack()
+              }
+              await page.waitForTimeout(2000)
+              await page
+                .getByRole('link', { name: 'Perfil' })
+                .first()
+                .click({ timeout: 5000 })
+            }
+            await page.waitForTimeout(3000)
+
+            console.log('Capturando Saldo Total...')
+            const bodyText = await page.innerText('body')
+            const match = bodyText.match(
+              /([\d.,]+)\s*Saldo Total|Saldo Total[\s:R$]*([\d.,]+)/i
+            )
+            if (match) {
+              carteiraReceita = match[1] || match[2]
+            } else {
+              // Fallback que busca o elemento irmão
+              const saldoTxt = await page
+                .locator('div')
+                .filter({ hasText: /^Saldo Total$/ })
+                .locator('xpath=preceding-sibling::div')
+                .innerText()
+              carteiraReceita = saldoTxt.replace(/[^0-9.,]/g, '').trim()
+            }
+            console.log(`Saldo capturado GK Wind: ${carteiraReceita}`)
+          } catch (e) {
+            console.log('Falha ao acessar Perfil ou capturar Saldo.', e.message)
+          }
+
+          try {
+            caminhoPrintSucesso = `sucesso_${conta.nome}.png`
+            await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
+            console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
+          } catch (e) {
+            caminhoPrintSucesso = ''
+          }
+        } else if (conta.plataforma === 'Arla') {
+          // FLUXO ARLA
+          console.log('Acessando tela de login Arla...')
+          await page.goto('https://arlavt.com/m/login')
+          await page.waitForTimeout(3000)
+
+          console.log('Preenchendo credenciais Arla...')
+          try {
+            const inputs = page.locator('input')
+            if ((await inputs.count()) >= 2) {
+              // Limpa campos
+              await inputs.nth(0).fill('')
+              await inputs.nth(0).fill(conta.telefone)
+              await inputs.nth(1).fill('')
+              await inputs.nth(1).fill(conta.senha)
+            }
+            await page.waitForTimeout(1000)
+
+            const btnLogin = page
+              .locator(
+                'button:has-text("Entrar"), button:has-text("Login"), .van-button'
+              )
+              .first()
+            await btnLogin.click()
+            await page.waitForTimeout(5000)
+          } catch (e) {
+            console.log('Aviso: Falha no preenchimento de login Arla.')
+          }
+
+          // Troca de idioma para Português (caso esteja em Espanhol)
+          try {
+            const btnPortugues = page
+              .locator('div')
+              .filter({ hasText: /^Portugues do Brasil$/ })
+              .first()
+            const jaEmPortugues = await btnPortugues
+              .isVisible({ timeout: 3000 })
+              .catch(() => false)
+
+            if (!jaEmPortugues) {
+              console.log('Idioma diferente de Português. Trocando...')
+              await page.locator('i').first().click()
+              await page.waitForTimeout(2000)
+              await page
+                .locator('div')
+                .filter({ hasText: /^Portugues do Brasil$/ })
+                .first()
+                .click()
+              console.log(
+                'Idioma alterado para Português. Aguardando recarregamento...'
+              )
+              await page.waitForTimeout(5000)
+            } else {
+              console.log('Idioma já está em Português.')
+            }
+          } catch (e) {
+            console.log(
+              'Aviso: Falha ao verificar/trocar idioma Arla:',
+              e.message
+            )
+          }
+
+          // 1. Fechar comunicados (Notificação do sistema)
+          console.log('Fechando comunicados Arla...')
+          try {
+            // O seletor .van-dialog__confirm é o padrão para botões "confirme" em diálogos Vant
+            const btnConfirme = page
+              .locator('.van-dialog__confirm, button:has-text("confirme")')
+              .first()
+            if (await btnConfirme.isVisible({ timeout: 10000 })) {
+              await btnConfirme.click()
+              console.log('Comunicado Arla fechado.')
+              await page.waitForTimeout(2000)
+            }
+
+            // Espera o overlay desaparecer para evitar bloqueio de clique
+            try {
+              await page.waitForSelector('.van-overlay', {
+                state: 'hidden',
+                timeout: 5000
+              })
+            } catch (e) {
+              console.log('Aviso: Overlay ainda presente ou não encontrado.')
+            }
+          } catch (e) {
+            console.log('Erro ao fechar comunicados Arla:', e.message)
+          }
+
+          // 2. Menu Fazenda e Alimentação
+          try {
+            console.log('Indo para Fazenda...')
+            await page.getByText('fazenda').click()
+            await page.waitForTimeout(3000)
+
+            console.log('Clicando em Alimentação (1)...')
+            await page
+              .getByRole('button', { name: 'Alimentação' })
               .first()
               .click()
             await page.waitForTimeout(3000)
 
-            try {
-              await page
-                .locator('button:has-text("Confirmar")')
-                .first()
-                .click({ timeout: 2000 })
-              await page.waitForTimeout(1000)
-            } catch (e) {}
+            console.log('Clicando em Alimentação (2)...')
+            await page
+              .getByRole('button', { name: 'Alimentação' })
+              .first()
+              .click()
+            await page.waitForTimeout(3000)
+
+            console.log('Confirmando ação de alimentação...')
+            await page.getByRole('button', { name: 'confirme' }).click()
+            await page.waitForTimeout(2000)
 
             contadorTarefas++
-            falhasConsecutivas = 0
-            console.log(
-              `  -> Tarefa #${contadorTarefas} concluída com sucesso!`
-            )
+            console.log('  -> Tarefa de Alimentação concluída!')
           } catch (e) {
-            falhasConsecutivas++
             console.log(
-              `⚠️ Falha na execução da tarefa (Possível vídeo travado). Tentativa ${falhasConsecutivas} de 2.`
+              'Aviso: Falha na tarefa de Alimentação Arla:',
+              e.message
             )
+          }
 
-            if (falhasConsecutivas >= 2) {
-              throw new Error(
-                'Falha ao concluir a tarefa após 2 tentativas. Travamento detectado.'
-              )
+          // 3. Check-in Diário
+          try {
+            console.log('Indo para o perfil via URL...')
+            await page.goto('https://arlavt.com/m/user/index')
+            await page.waitForTimeout(3000)
+
+            console.log('Acessando área de Check-in...')
+            await page.getByRole('button', { name: 'Faça login' }).click()
+            await page.waitForTimeout(3000)
+
+            console.log('Realizando Check-in...')
+            await page
+              .getByRole('button', { name: 'Clique para fazer login' })
+              .click()
+            await page.waitForTimeout(3000)
+            contadorTarefas++
+            console.log('  -> Check-in realizado!')
+          } catch (e) {
+            console.log('Aviso: Falha no Check-in Arla:', e.message)
+          }
+
+          // 4. Captura de Saldo e Print
+          try {
+            console.log('Acessando o perfil via URL para capturar saldo...')
+            await page.goto('https://arlavt.com/m/user/index')
+            await page.waitForTimeout(4000)
+
+            caminhoPrintSucesso = `sucesso_${conta.nome}.png`
+            await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
+
+            const bodyText = await page.innerText('body')
+            const match = bodyText.match(/GTQ\s*([\d.,]+)/i)
+            if (match) {
+              carteiraReceita = match[1]
             } else {
+              const locSaldo = page.getByText(/GTQ\s*[\d.,]+/).first()
+              const texto = await locSaldo.innerText()
+              carteiraReceita = texto.replace(/GTQ/i, '').trim()
+            }
+            console.log(`Saldo capturado Arla: ${carteiraReceita}`)
+          } catch (e) {
+            console.log(
+              'Aviso: Falha ao capturar saldo ou print Arla:',
+              e.message
+            )
+          }
+        } else {
+          // FLUXO ROYAL AURUM
+          console.log('Acessando tela de login Royal Aurum...')
+          await page.goto('https://royalaurum0931.com/login')
+          await page.waitForTimeout(3000)
+
+          console.log('Preenchendo credenciais...')
+          await page.fill(
+            'input[placeholder="(11) 99999-9999"]',
+            conta.telefone
+          )
+          await page.fill('input[placeholder="Senha"]', conta.senha)
+          await page.waitForTimeout(1000)
+
+          await page.locator('button:has-text("Entrar")').click()
+          console.log('Comando de Entrar enviado.')
+
+          await page.waitForTimeout(5000)
+
+          // ==========================================
+          // 3. VERIFICAR COMUNICADOS
+          // ==========================================
+
+          console.log(
+            'Verificando se há comunicados especiais (Ver detalhes)...'
+          )
+          try {
+            const botaoDetalhes = page.getByRole('button', {
+              name: 'Ver detalhes'
+            })
+            await botaoDetalhes.waitFor({ state: 'visible', timeout: 2000 })
+
+            console.log(
+              "Aviso especial detectado! Clicando em 'Ver detalhes'..."
+            )
+            await botaoDetalhes.click()
+
+            console.log(
+              "Aguardando liberação do botão 'Voltar' (aprox. 10s)..."
+            )
+            const botaoVoltar = page.getByRole('button', { name: 'Voltar' })
+            await botaoVoltar.waitFor({ state: 'visible', timeout: 10000 })
+            await botaoVoltar.click()
+
+            console.log('Retornou do aviso especial com sucesso.')
+            await page.waitForTimeout(2000)
+          } catch (e) {
+            console.log('Nenhum aviso especial encontrado. Seguindo...')
+          }
+
+          console.log('Verificando se há comunicados normais na tela...')
+          let comunicadosFechados = 0
+          while (true) {
+            try {
+              const botaoFechar = page.locator('.close').first()
+              await botaoFechar.waitFor({ state: 'visible', timeout: 4000 })
+              await botaoFechar.click({ force: true })
+              comunicadosFechados++
+              console.log(`Comunicado #${comunicadosFechados} fechado.`)
+              await page.waitForTimeout(1500)
+            } catch (e) {
+              if (comunicadosFechados > 0) {
+                console.log(
+                  `Total de comunicados fechados: ${comunicadosFechados}. Seguindo...`
+                )
+              } else {
+                console.log('Nenhum comunicado normal encontrado. Seguindo...')
+              }
+              break
+            }
+          }
+
+          // ==========================================
+          // 4. ROTINA DE TAREFAS (SEU LOOP)
+          // ==========================================
+
+          console.log('Iniciando rotina de tarefas...')
+          await page.click('a:has-text("Tarefa")')
+          await page.waitForTimeout(2000)
+
+          let temTarefa = true
+          let falhasConsecutivas = 0
+
+          while (temTarefa) {
+            let botaoEnviar
+            try {
+              botaoEnviar = page
+                .locator('button:has-text("Iniciar Tarefa")')
+                .first()
+              await botaoEnviar.waitFor({ state: 'visible', timeout: 5000 })
+            } catch (e) {
               console.log(
-                'Forçando retorno para a tela inicial para tentar novamente...'
+                `Fim natural das tarefas. Total concluído: ${contadorTarefas}`
               )
-              await page.goto('https://royalaurum0931.com/')
-              await page.waitForTimeout(4000)
+              temTarefa = false
+              falhasConsecutivas = 0
+              break
+            }
+
+            try {
+              console.log(`Processando tarefa #${contadorTarefas + 1}...`)
+              await botaoEnviar.click()
+
+              await page
+                .locator('button[aria-label="5 estrelas"]')
+                .waitFor({ state: 'visible', timeout: 15000 })
+              await page
+                .locator('button[aria-label="5 estrelas"]')
+                .click({ force: true })
+              await page.waitForTimeout(1000)
+
+              await page
+                .locator('button:has-text("Receber Recompensa")')
+                .first()
+                .click()
+              await page.waitForTimeout(3000)
 
               try {
                 await page
-                  .locator('.close')
+                  .locator('button:has-text("Confirmar")')
                   .first()
-                  .click({ timeout: 2000, force: true })
-              } catch (err) {}
+                  .click({ timeout: 2000 })
+                await page.waitForTimeout(1000)
+              } catch (e) {}
 
-              await page.click('a:has-text("Tarefa")')
-              await page.waitForTimeout(3000)
+              contadorTarefas++
+              falhasConsecutivas = 0
+              console.log(
+                `  -> Tarefa #${contadorTarefas} concluída com sucesso!`
+              )
+            } catch (e) {
+              falhasConsecutivas++
+              console.log(
+                `⚠️ Falha na execução da tarefa (Possível vídeo travado). Tentativa ${falhasConsecutivas} de 2.`
+              )
+
+              if (falhasConsecutivas >= 2) {
+                throw new Error(
+                  'Falha ao concluir a tarefa após 2 tentativas. Travamento detectado.'
+                )
+              } else {
+                console.log(
+                  'Forçando retorno para a tela inicial para tentar novamente...'
+                )
+                await page.goto('https://royalaurum0931.com/')
+                await page.waitForTimeout(4000)
+
+                try {
+                  await page
+                    .locator('.close')
+                    .first()
+                    .click({ timeout: 2000, force: true })
+                } catch (err) {}
+
+                await page.click('a:has-text("Tarefa")')
+                await page.waitForTimeout(3000)
+              }
             }
           }
-        }
 
-        try {
-          caminhoPrintSucesso = `sucesso_${conta.nome}.png`
-          await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
-          console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
-        } catch (e) {
-          console.log('Não foi possível tirar o print da tela de sucesso.')
-          caminhoPrintSucesso = ''
-        }
+          try {
+            caminhoPrintSucesso = `sucesso_${conta.nome}.png`
+            await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
+            console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
+          } catch (e) {
+            console.log('Não foi possível tirar o print da tela de sucesso.')
+            caminhoPrintSucesso = ''
+          }
 
-        // ==========================================
-        // 5. CAPTURAR O SALDO NA "MINHA ÁREA"
-        // ==========================================
-        console.log('Navegando de volta para a Home para capturar o saldo...')
-        await page.goto('https://royalaurum0931.com/')
-        await page.waitForTimeout(4000)
+          // ==========================================
+          // 5. CAPTURAR O SALDO NA "MINHA ÁREA"
+          // ==========================================
+          console.log('Navegando de volta para a Home para capturar o saldo...')
+          await page.goto('https://royalaurum0931.com/')
+          await page.waitForTimeout(4000)
 
-        try {
-          await page
-            .locator('.close')
+          try {
+            await page
+              .locator('.close')
+              .first()
+              .click({ timeout: 2000, force: true })
+          } catch (err) {}
+
+          console.log("Indo para 'Minha área'...")
+          try {
+            await page.click('text="Minha área"')
+          } catch (e) {}
+          await page.waitForTimeout(3000)
+
+          const locSaldo = page
+            .locator('div:has(span:has-text("Carteira de Receita")) > p')
             .first()
-            .click({ timeout: 2000, force: true })
-        } catch (err) {}
+          await locSaldo.waitFor({ state: 'visible', timeout: 10000 })
 
-        console.log("Indo para 'Minha área'...")
+          const carteiraTexto = await locSaldo.innerText()
+          carteiraReceita = carteiraTexto.replace(/[^0-9.,]/g, '').trim()
+          console.log(`Saldo capturado: ${carteiraReceita}`)
+        }
+
+        relatorioFinal += `${conta.nome} - ${conta.plataforma} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`
+        if (carteiraReceita && carteiraReceita !== '0.00')
+          saldosHoje[conta.nome] = {
+            saldo: carteiraReceita,
+            plataforma: conta.plataforma
+          }
+
+        // Upload do print de sucesso, se existir
+        let urlPrintSucesso = ''
+        if (caminhoPrintSucesso && fs.existsSync(caminhoPrintSucesso)) {
+          urlPrintSucesso = await uploadPrintToStorage(
+            caminhoPrintSucesso,
+            `sucesso_${conta.nome}_${Date.now()}.png`
+          )
+        }
+
+        await salvarResultadoConta({
+          accountId: conta.id,
+          nome: conta.nome,
+          telefone: conta.telefone,
+          plataforma: conta.plataforma,
+          status: 'success',
+          tarefasConcluidas: contadorTarefas,
+          saldo: carteiraReceita,
+          caminhoPrint: urlPrintSucesso || caminhoPrintSucesso
+        })
+
+        // Chama a função passando o contadorTarefas
+        if (conta.email) {
+          console.log(
+            `Preparando envio de e-mail de status para ${conta.nome}...`
+          )
+          // Note que adicionamos a variável contadorTarefas e plataforma aqui na chamada
+          await enviarEmailIndividual(
+            conta.email,
+            conta.nome,
+            carteiraReceita,
+            contadorTarefas,
+            dataHoje,
+            conta.plataforma
+          )
+        }
+
+        const numeroEnvio = conta.telefoneWhatsApp || conta.telefone
+        if (conta.recebeWhatsApp) {
+          console.log(
+            `Preparando envio de WhatsApp de status para ${conta.nome}...`
+          )
+          await enviarWhatsApp(
+            numeroEnvio,
+            conta.nome,
+            carteiraReceita,
+            contadorTarefas,
+            dataHoje,
+            caminhoPrintSucesso,
+            conta.plataforma
+          )
+        }
+
+        // 3. LIMPEZA DO PRINT DE SUCESSO
+        if (caminhoPrintSucesso && fs.existsSync(caminhoPrintSucesso)) {
+          try {
+            fs.unlinkSync(caminhoPrintSucesso)
+          } catch (e) {}
+        }
+      } catch (erro) {
+        if (tentativaAtual < MAX_TENTATIVAS) {
+          console.log(
+            `⚠️ Falha na tentativa ${tentativaAtual}/${MAX_TENTATIVAS} de ${conta.nome}. Retentando em 5s...`
+          )
+          try {
+            await context.close()
+          } catch (_e) {}
+          await new Promise(r => setTimeout(r, 5000))
+          _retry = true
+        } else {
+          console.error(
+            `Falha ao processar a conta de ${conta.nome} (${conta.telefone}):`,
+            erro.message
+          )
+          relatorioFinal += `${conta.nome}: ERRO - ${erro.message}\n`
+
+          const caminhoPrint = `erro_${conta.nome}.png`
+          try {
+            await page.screenshot({ path: caminhoPrint, fullPage: true })
+            console.log(`Print de erro salvo como ${caminhoPrint}`)
+          } catch (e) {
+            console.log('Não foi possível tirar o print da tela.')
+          }
+
+          // Upload do print de erro, se existir
+          let urlPrintErro = ''
+          if (caminhoPrint && fs.existsSync(caminhoPrint)) {
+            urlPrintErro = await uploadPrintToStorage(
+              caminhoPrint,
+              `erro_${conta.nome}_${Date.now()}.png`
+            )
+          }
+
+          await salvarResultadoConta({
+            accountId: conta.id,
+            nome: conta.nome,
+            telefone: conta.telefone,
+            plataforma: conta.plataforma,
+            status: 'error',
+            tarefasConcluidas: 0,
+            saldo: null,
+            erro: erro.message,
+            caminhoPrint: urlPrintErro || caminhoPrint
+          })
+
+          // 1. Envia o E-mail com o print
+          if (conta.email) {
+            console.log(
+              `Preparando envio de e-mail de erro para ${conta.nome}...`
+            )
+            await enviarEmailErro(
+              conta.email,
+              conta.nome,
+              dataHoje,
+              caminhoPrint
+            )
+          }
+
+          // 2. Envia o WhatsApp com o print
+          const numeroEnvio = conta.telefoneWhatsApp || conta.telefone
+          if (conta.recebeWhatsApp) {
+            console.log(
+              `Preparando envio de WhatsApp de erro para ${conta.nome}...`
+            )
+            await enviarWhatsAppErro(
+              numeroEnvio,
+              conta.nome,
+              dataHoje,
+              caminhoPrint
+            )
+          }
+
+          // 3. LIMPEZA: Agora apagamos a imagem apenas depois de mandar nos dois
+          if (caminhoPrint && fs.existsSync(caminhoPrint)) {
+            try {
+              fs.unlinkSync(caminhoPrint)
+            } catch (e) {}
+          }
+        } // end else (tentativa final)
+      } finally {
         try {
-          await page.click('text="Minha área"')
-        } catch (e) {}
-        await page.waitForTimeout(3000)
-
-        const locSaldo = page
-          .locator('div:has(span:has-text("Carteira de Receita")) > p')
-          .first()
-        await locSaldo.waitFor({ state: 'visible', timeout: 10000 })
-
-        const carteiraTexto = await locSaldo.innerText()
-        carteiraReceita = carteiraTexto.replace(/[^0-9.,]/g, '').trim()
-        console.log(`Saldo capturado: ${carteiraReceita}`)
+          await context.close()
+        } catch (_e) {}
+        if (!_retry) console.log(`Conta de ${conta.nome} finalizada.\n`)
       }
-
-      relatorioFinal += `${conta.nome} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`
-
-      // Upload do print de sucesso, se existir
-      let urlPrintSucesso = ''
-      if (caminhoPrintSucesso && fs.existsSync(caminhoPrintSucesso)) {
-        urlPrintSucesso = await uploadPrintToStorage(
-          caminhoPrintSucesso,
-          `sucesso_${conta.nome}_${Date.now()}.png`
-        )
-      }
-
-      await salvarResultadoConta({
-        accountId: conta.id,
-        nome: conta.nome,
-        telefone: conta.telefone,
-        plataforma: conta.plataforma,
-        status: 'success',
-        tarefasConcluidas: contadorTarefas,
-        saldo: carteiraReceita,
-        caminhoPrint: urlPrintSucesso || caminhoPrintSucesso
-      })
-
-      // Chama a função passando o contadorTarefas
-      if (conta.email) {
-        console.log(
-          `Preparando envio de e-mail de status para ${conta.nome}...`
-        )
-        // Note que adicionamos a variável contadorTarefas e plataforma aqui na chamada
-        await enviarEmailIndividual(
-          conta.email,
-          conta.nome,
-          carteiraReceita,
-          contadorTarefas,
-          dataHoje,
-          conta.plataforma
-        )
-      }
-
-      const numeroEnvio = conta.telefoneWhatsApp || conta.telefone
-      if (conta.recebeWhatsApp) {
-        console.log(
-          `Preparando envio de WhatsApp de status para ${conta.nome}...`
-        )
-        await enviarWhatsApp(
-          numeroEnvio,
-          conta.nome,
-          carteiraReceita,
-          contadorTarefas,
-          dataHoje,
-          caminhoPrintSucesso,
-          conta.plataforma
-        )
-      }
-
-      // 3. LIMPEZA DO PRINT DE SUCESSO
-      if (caminhoPrintSucesso && fs.existsSync(caminhoPrintSucesso)) {
-        try {
-          fs.unlinkSync(caminhoPrintSucesso)
-        } catch (e) {}
-      }
-    } catch (erro) {
-      console.error(
-        `Falha ao processar a conta de ${conta.nome} (${conta.telefone}):`,
-        erro.message
-      )
-      relatorioFinal += `${conta.nome}: ERRO - ${erro.message}\n`
-
-      const caminhoPrint = `erro_${conta.nome}.png`
-      try {
-        await page.screenshot({ path: caminhoPrint, fullPage: true })
-        console.log(`Print de erro salvo como ${caminhoPrint}`)
-      } catch (e) {
-        console.log('Não foi possível tirar o print da tela.')
-      }
-
-      // Upload do print de erro, se existir
-      let urlPrintErro = ''
-      if (caminhoPrint && fs.existsSync(caminhoPrint)) {
-        urlPrintErro = await uploadPrintToStorage(
-          caminhoPrint,
-          `erro_${conta.nome}_${Date.now()}.png`
-        )
-      }
-
-      await salvarResultadoConta({
-        accountId: conta.id,
-        nome: conta.nome,
-        telefone: conta.telefone,
-        plataforma: conta.plataforma,
-        status: 'error',
-        tarefasConcluidas: 0,
-        saldo: null,
-        erro: erro.message,
-        caminhoPrint: urlPrintErro || caminhoPrint
-      })
-
-      // 1. Envia o E-mail com o print
-      if (conta.email) {
-        console.log(`Preparando envio de e-mail de erro para ${conta.nome}...`)
-        await enviarEmailErro(conta.email, conta.nome, dataHoje, caminhoPrint)
-      }
-
-      // 2. Envia o WhatsApp com o print
-      const numeroEnvio = conta.telefoneWhatsApp || conta.telefone
-      if (conta.recebeWhatsApp) {
-        console.log(
-          `Preparando envio de WhatsApp de erro para ${conta.nome}...`
-        )
-        await enviarWhatsAppErro(
-          numeroEnvio,
-          conta.nome,
-          dataHoje,
-          caminhoPrint
-        )
-      }
-
-      // 3. LIMPEZA: Agora apagamos a imagem apenas depois de mandar nos dois
-      if (caminhoPrint && fs.existsSync(caminhoPrint)) {
-        try {
-          fs.unlinkSync(caminhoPrint)
-        } catch (e) {}
-      }
-    } finally {
-      await context.close()
-      console.log(`Conta de ${conta.nome} finalizada.\n`)
-    }
+      if (!_retry) break
+    } // end while
   }
 
   await browser.close()
+
+  // ==========================================
+  // 5.5. RELATÓRIO COMPARATIVO
+  // ==========================================
+  try {
+    const ontem = new Date()
+    ontem.setDate(ontem.getDate() - 1)
+    ontem.setHours(0, 0, 0, 0)
+    const hoje = new Date()
+    hoje.setHours(0, 0, 0, 0)
+    const { data: resultadosOntem } = await supabase
+      .from('account_run_results')
+      .select('account_name, balance')
+      .gte('executed_at', ontem.toISOString())
+      .lt('executed_at', hoje.toISOString())
+      .eq('status', 'success')
+
+    if (resultadosOntem && resultadosOntem.length > 0) {
+      const mapOntem = {}
+      for (const r of resultadosOntem) mapOntem[r.account_name] = r.balance
+
+      const linhasComparativo = []
+      for (const [nome, { saldo, plataforma }] of Object.entries(saldosHoje)) {
+        const saldoAnt = mapOntem[nome]
+        if (saldoAnt) {
+          const atual = parseFloat(saldo.replace(',', '.')) || 0
+          const ant = parseFloat(saldoAnt.replace(',', '.')) || 0
+          const diff = atual - ant
+          const emoji = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️'
+          const sinal = diff > 0 ? '+' : ''
+          linhasComparativo.push(
+            `${nome} - ${plataforma}: ${saldo} (ontem: ${saldoAnt} | ${sinal}${diff.toFixed(2)} ${emoji})`
+          )
+        }
+      }
+      if (linhasComparativo.length > 0)
+        relatorioFinal +=
+          '\n📊 Comparativo vs. Ontem:\n' + linhasComparativo.join('\n') + '\n'
+    }
+  } catch (e) {
+    console.log('Aviso: Não foi possível gerar o comparativo:', e.message)
+  }
 
   // ==========================================
   // 6. ENVIAR E-MAIL FINAL E WHATSAPP FINAL

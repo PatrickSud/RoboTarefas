@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical } from 'lucide-react';
+import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -70,11 +70,71 @@ function SortableRow({ account, onToggleActive, onToggleTestMode, onEdit, onDele
   );
 }
 
+function SortableHeader({ label, colKey, sortConfig, onSort }) {
+  const isActive = sortConfig.key === colKey;
+  const Icon = isActive ? (sortConfig.dir === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
+  return (
+    <th
+      className="px-4 py-3 font-medium text-gray-400 cursor-pointer select-none hover:text-gray-200 transition-colors"
+      onClick={() => onSort(colKey)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        <Icon size={14} className={isActive ? 'text-indigo-400' : 'text-gray-600'} />
+      </div>
+    </th>
+  );
+}
+
+const FILTER_KEY = 'accounts_filters';
+
+function loadFilters() {
+  try { return JSON.parse(localStorage.getItem(FILTER_KEY)) || {}; } catch { return {}; }
+}
+
 export default function Accounts() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState(null);
+
+  const saved = loadFilters();
+  const [searchBar, setSearchBar] = useState(saved.searchBar || '');
+  const [sortConfig, setSortConfig] = useState(saved.sortConfig || { key: null, dir: 'asc' });
+
+  function saveFilters(updates) {
+    const current = loadFilters();
+    localStorage.setItem(FILTER_KEY, JSON.stringify({ ...current, ...updates }));
+  }
+
+  function handleSort(key) {
+    setSortConfig(prev => {
+      const dir = prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc';
+      const next = { key, dir };
+      saveFilters({ sortConfig: next });
+      return next;
+    });
+  }
+
+  const displayAccounts = useMemo(() => {
+    let list = accounts;
+    if (searchBar) {
+      const q = searchBar.toLowerCase();
+      list = list.filter(a =>
+        a.name?.toLowerCase().includes(q) ||
+        a.phone?.toLowerCase().includes(q) ||
+        a.platform?.toLowerCase().includes(q)
+      );
+    }
+    if (sortConfig.key) {
+      list = [...list].sort((a, b) => {
+        const va = (a[sortConfig.key] || '').toLowerCase();
+        const vb = (b[sortConfig.key] || '').toLowerCase();
+        return sortConfig.dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+    }
+    return list;
+  }, [accounts, searchBar, sortConfig]);
 
   const sensors = useSensors(useSensor(PointerSensor));
 
@@ -119,12 +179,10 @@ export default function Accounts() {
   async function handleDragEnd(event) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
     const oldIndex = accounts.findIndex(a => a.id === active.id);
     const newIndex = accounts.findIndex(a => a.id === over.id);
     const reordered = arrayMove(accounts, oldIndex, newIndex);
     setAccounts(reordered);
-
     const updates = reordered.map((a, i) =>
       supabase.from('accounts').update({ sort_order: i + 1 }).eq('id', a.id)
     );
@@ -141,7 +199,7 @@ export default function Accounts() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl md:text-2xl font-bold text-white">Contas</h2>
         <button
           onClick={() => { setEditingAccount(null); setShowForm(true); }}
@@ -150,6 +208,23 @@ export default function Accounts() {
           <Plus size={16} />
           Nova Conta
         </button>
+      </div>
+
+      {/* Search Bar global */}
+      <div className="relative mb-4">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Buscar por nome, telefone ou plataforma..."
+          value={searchBar}
+          onChange={e => { setSearchBar(e.target.value); saveFilters({ searchBar: e.target.value }); }}
+          className="w-full pl-9 pr-9 py-2 bg-gray-900 border border-gray-700 text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600"
+        />
+        {searchBar && (
+          <button onClick={() => { setSearchBar(''); saveFilters({ searchBar: '' }); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -166,18 +241,20 @@ export default function Accounts() {
             <thead className="bg-gray-800/50 text-left">
               <tr>
                 <th className="px-3 py-3 w-8"></th>
-                <th className="px-4 py-3 font-medium text-gray-400">Nome</th>
-                <th className="px-4 py-3 font-medium text-gray-400">Plataforma</th>
-                <th className="px-4 py-3 font-medium text-gray-400">Telefone</th>
+                <SortableHeader label="Nome" colKey="name" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Plataforma" colKey="platform" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Telefone" colKey="phone" sortConfig={sortConfig} onSort={handleSort} />
                 <th className="px-4 py-3 font-medium text-gray-400" title="Modo Teste">Teste</th>
                 <th className="px-4 py-3 font-medium text-gray-400">Status</th>
                 <th className="px-4 py-3 font-medium text-gray-400 text-right">Ações</th>
               </tr>
             </thead>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={accounts.map(a => a.id)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={displayAccounts.map(a => a.id)} strategy={verticalListSortingStrategy}>
                 <tbody className="divide-y divide-gray-800">
-                  {accounts.map(account => (
+                  {displayAccounts.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-600 text-sm">Nenhuma conta encontrada.</td></tr>
+                  ) : displayAccounts.map(account => (
                     <SortableRow
                       key={account.id}
                       account={account}
