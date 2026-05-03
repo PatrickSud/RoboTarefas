@@ -1,7 +1,20 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, XCircle, Clock, Activity, Play, Power, Wifi, WifiOff, RefreshCw, Terminal, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Activity, Play, Power, Wifi, WifiOff, RefreshCw, Terminal, TrendingUp, ChevronDown, ChevronUp, X, Image } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+function PrintModal({ url, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+      <div className="relative max-w-4xl w-full max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute -top-10 right-0 text-white hover:text-gray-300 flex items-center gap-1 text-sm">
+          <X size={18} /> Fechar
+        </button>
+        <img src={url} alt="Print" className="w-full h-auto max-h-[85vh] object-contain rounded-xl shadow-2xl border border-gray-700" />
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [results, setResults] = useState([]);
@@ -12,11 +25,12 @@ export default function Dashboard() {
   const [autoShutdown, setAutoShutdown] = useState(true);
   const [awsStatus, setAwsStatus] = useState('unknown'); // 'online' | 'offline' | 'unknown'
   const [logs, setLogs] = useState('');
-  const [logsOpen, setLogsOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [chartData, setChartData] = useState([]);
   const [chartAccounts, setChartAccounts] = useState([]);
-  const [showChart, setShowChart] = useState(false);
+  const [showChart, setShowChart] = useState(true);
+  const [modalUrl, setModalUrl] = useState(null);
   const logsRef = useRef(null);
 
   const CHART_COLORS = ['#818cf8','#34d399','#fb923c','#f472b6','#60a5fa','#a78bfa','#facc15'];
@@ -63,8 +77,9 @@ export default function Dashboard() {
     for (const r of data) {
       const date = new Date(r.executed_at).toLocaleDateString('pt-BR');
       if (!byDate[date]) byDate[date] = { date };
-      const val = parseFloat((r.balance || '0').replace(',', '.'));
-      if (!isNaN(val)) byDate[date][r.account_name] = val;
+      const raw = String(r.balance ?? '0').replace(/[^\d,./]/g, '').replace(',', '.');
+      const val = parseFloat(raw);
+      if (!isNaN(val) && val > 0) byDate[date][r.account_name] = val;
     }
     setChartData(Object.values(byDate));
   }
@@ -95,6 +110,8 @@ export default function Dashboard() {
   useEffect(() => {
     fetchLatestResults();
     checkAwsStatus();
+    fetchChartData();
+    fetchLogs();
 
     const channel = supabase
       .channel('dashboard-realtime')
@@ -179,6 +196,8 @@ export default function Dashboard() {
 
   return (
     <div>
+      {modalUrl && <PrintModal url={modalUrl} onClose={() => setModalUrl(null)} />}
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 md:mb-6">
         <div>
           <div className="flex items-center gap-3">
@@ -344,15 +363,15 @@ export default function Dashboard() {
                   <td className="px-5 py-3 text-gray-400">{r.balance || '-'}</td>
                   <td className="px-5 py-3 text-center">
                     {r.screenshot_path || r.caminhoPrint ? (
-                      <a href={r.screenshot_path || r.caminhoPrint} target="_blank" rel="noopener noreferrer">
+                      <button onClick={() => setModalUrl(r.screenshot_path || r.caminhoPrint)} title="Ver print">
                         <img
                           src={r.screenshot_path || r.caminhoPrint}
                           alt="Print"
-                          className="w-12 h-12 object-cover rounded shadow border border-gray-700 hover:scale-105 transition-transform"
+                          className="w-12 h-12 object-cover rounded shadow border border-gray-700 hover:scale-105 hover:border-indigo-500 transition-all cursor-zoom-in"
                         />
-                      </a>
+                      </button>
                     ) : (
-                      <span className="text-gray-400 text-xs">—</span>
+                      <Image size={16} className="text-gray-700 mx-auto"  />
                     )}
                   </td>
                   <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
@@ -370,7 +389,7 @@ export default function Dashboard() {
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mt-6">
         <button
           className="w-full px-4 md:px-5 py-4 flex items-center justify-between hover:bg-gray-800/40 transition-colors"
-          onClick={() => { setShowChart(v => !v); if (!showChart && chartData.length === 0) fetchChartData(); }}
+          onClick={() => setShowChart(v => !v)}
         >
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-indigo-400" />
