@@ -785,6 +785,14 @@ async function executarAutomacao() {
                 .first()
                 .click({ timeout: 3000 })
               await page.waitForTimeout(3000)
+              console.log('Clicando em Entrar após troca de idioma GK Wind...')
+              try {
+                await page
+                  .getByRole('button', { name: /^Entrar$/i })
+                  .first()
+                  .click({ timeout: 5000 })
+                await page.waitForTimeout(4000)
+              } catch (e) {}
             }
           } catch (e) {
             console.log(
@@ -1027,7 +1035,7 @@ async function executarAutomacao() {
             console.log('Clicando em Alimentação (1)...')
             await page
               .getByRole('button', {
-                name: /Alimentação|Alimentacion|Alimentación|Feed|Feeding/i
+                name: /Alimentar|Alimentação|Alimentacion|Alimentación|Feed|Feeding/i
               })
               .first()
               .click()
@@ -1036,7 +1044,7 @@ async function executarAutomacao() {
             console.log('Clicando em Alimentação (2)...')
             await page
               .getByRole('button', {
-                name: /Alimentação|Alimentacion|Alimentación|Feed|Feeding/i
+                name: /Alimentar|Alimentação|Alimentacion|Alimentación|Feed|Feeding/i
               })
               .first()
               .click()
