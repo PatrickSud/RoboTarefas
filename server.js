@@ -1,6 +1,8 @@
 require('dotenv').config()
 
 const http = require('http')
+const fs = require('fs')
+const path = require('path')
 const { spawn } = require('child_process')
 const { cleanupOldPrints } = require('./services/storageCleanupService')
 
@@ -133,6 +135,25 @@ const server = http.createServer(async (req, res) => {
 
     const result = await cleanupOldPrints(retentionDays)
     sendJson(res, 200, { ok: true, ...result })
+    return
+  }
+
+  if (req.url === '/logs' && req.method === 'GET') {
+    if (!isAuthorized(req)) {
+      sendJson(res, 401, { ok: false, message: 'Não autorizado.' })
+      return
+    }
+    try {
+      const logPath = path.join(__dirname, 'log_sistema.txt')
+      const content = fs.existsSync(logPath)
+        ? fs.readFileSync(logPath, 'utf8')
+        : ''
+      const lines = content.split('\n')
+      const lastLines = lines.slice(-300).join('\n')
+      sendJson(res, 200, { ok: true, logs: lastLines })
+    } catch (e) {
+      sendJson(res, 200, { ok: true, logs: '(Nenhum log disponível)' })
+    }
     return
   }
 
