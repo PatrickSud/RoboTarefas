@@ -22,6 +22,7 @@ const { buscarContasParaProcessar } = require('./services/accountService')
 const { salvarResultadoConta } = require('./services/runResultService')
 const { uploadPrintToStorage } = require('./services/storageService')
 const { supabase } = require('./services/supabaseClient')
+const googleAiApiKey = process.env.GOOGLE_AI_API_KEY
 
 const client = new Client({
   authStrategy: new LocalAuth(),
@@ -92,6 +93,132 @@ client.on('ready', () => {
 })
 
 client.initialize()
+
+function chamarGoogleAI(payload) {
+  return new Promise((resolve, reject) => {
+    if (!googleAiApiKey) {
+      resolve(null)
+      return
+    }
+
+    const body = JSON.stringify(payload)
+    const model = process.env.GOOGLE_AI_MODEL || 'gemini-1.5-flash'
+    const req = https.request(
+      {
+        hostname: 'generativelanguage.googleapis.com',
+        path: `/v1beta/models/${model}:generateContent?key=${googleAiApiKey}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      },
+      res => {
+        let data = ''
+        res.on('data', chunk => {
+          data += chunk
+        })
+        res.on('end', () => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(`Google AI HTTP ${res.statusCode}: ${data}`))
+            return
+          }
+          resolve(JSON.parse(data))
+        })
+      }
+    )
+
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+async function fallbackInteligente(page, contexto, erroOriginal) {
+  if (!googleAiApiKey) {
+    console.log('Fallback IA desativado: GOOGLE_AI_API_KEY não configurada.')
+    return false
+  }
+
+  try {
+    console.log(`Fallback IA acionado: ${contexto}`)
+    const screenshot = await page.screenshot({ fullPage: true, type: 'png' })
+    const textoVisivel = await page.innerText('body').catch(() => '')
+    const urlAtual = page.url()
+
+    const instrucao =
+      'Você controla um navegador Playwright em uma automação. Analise a tela e retorne somente JSON válido no formato {"actions":[...],"reason":"..."}. Ações permitidas: click_text com text, click_selector com selector, fill_selector com selector/value, goto com url, back, wait com ms. Use no máximo 3 ações.'
+
+    const resposta = await chamarGoogleAI({
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json'
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: `${instrucao}\n\nContexto: ${contexto}\nErro: ${erroOriginal?.message || erroOriginal || 'sem erro'}\nURL atual: ${urlAtual}\nTexto visível:\n${textoVisivel.slice(0, 6000)}`
+            },
+            {
+              inline_data: {
+                mimeType: 'image/png',
+                data: screenshot.toString('base64')
+              }
+            }
+          ]
+        }
+      ]
+    })
+
+    const content = resposta?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const parsed = JSON.parse(
+      content
+        .replace(/^```json\s*/i, '')
+        .replace(/```$/i, '')
+        .trim()
+    )
+    const actions = Array.isArray(parsed.actions)
+      ? parsed.actions.slice(0, 3)
+      : []
+    console.log(
+      'Fallback IA sugestão:',
+      parsed.reason || JSON.stringify(actions)
+    )
+
+    for (const action of actions) {
+      if (action.type === 'click_text' && action.text) {
+        await page
+          .getByText(action.text, { exact: false })
+          .first()
+          .click({ timeout: 5000 })
+      } else if (action.type === 'click_selector' && action.selector) {
+        await page.locator(action.selector).first().click({ timeout: 5000 })
+      } else if (action.type === 'fill_selector' && action.selector) {
+        await page
+          .locator(action.selector)
+          .first()
+          .fill(String(action.value || ''), { timeout: 5000 })
+      } else if (action.type === 'goto' && action.url) {
+        await page.goto(action.url, {
+          waitUntil: 'domcontentloaded',
+          timeout: 15000
+        })
+      } else if (action.type === 'back') {
+        await page.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 })
+      } else if (action.type === 'wait') {
+        await page.waitForTimeout(Math.min(Number(action.ms) || 1000, 10000))
+      }
+      await page.waitForTimeout(1000)
+    }
+
+    return actions.length > 0
+  } catch (erroFallback) {
+    console.log('Fallback IA falhou:', erroFallback.message)
+    return false
+  }
+}
 
 // Captura erros fatais que não caíram no bloco try/catch
 process.on('uncaughtException', async err => {
@@ -727,6 +854,11 @@ async function executarAutomacao() {
               )
             }
           } catch (e) {
+            await fallbackInteligente(
+              page,
+              'GK Wind - etapa de check-in diário',
+              e
+            )
             console.log('Aviso: Falha na etapa de Check-in GK Wind:', e.message)
           }
 
@@ -770,6 +902,11 @@ async function executarAutomacao() {
             }
             console.log(`Saldo capturado GK Wind: ${carteiraReceita}`)
           } catch (e) {
+            await fallbackInteligente(
+              page,
+              'GK Wind - acessar perfil ou capturar saldo',
+              e
+            )
             console.log('Falha ao acessar Perfil ou capturar Saldo.', e.message)
           }
 
@@ -912,6 +1049,7 @@ async function executarAutomacao() {
             contadorTarefas++
             console.log('  -> Tarefa de Alimentação concluída!')
           } catch (e) {
+            await fallbackInteligente(page, 'Arla - tarefa de alimentação', e)
             console.log(
               'Aviso: Falha na tarefa de Alimentação Arla:',
               e.message
@@ -942,6 +1080,7 @@ async function executarAutomacao() {
             contadorTarefas++
             console.log('  -> Check-in realizado!')
           } catch (e) {
+            await fallbackInteligente(page, 'Arla - check-in diário', e)
             console.log('Aviso: Falha no Check-in Arla:', e.message)
           }
 
@@ -965,6 +1104,7 @@ async function executarAutomacao() {
             }
             console.log(`Saldo capturado Arla: ${carteiraReceita}`)
           } catch (e) {
+            await fallbackInteligente(page, 'Arla - capturar saldo ou print', e)
             console.log(
               'Aviso: Falha ao capturar saldo ou print Arla:',
               e.message
