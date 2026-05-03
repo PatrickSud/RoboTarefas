@@ -250,39 +250,42 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/20 rounded-lg">
-              <Activity size={20} className="text-indigo-400" />
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6 md:mb-8">
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-5">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="p-1.5 md:p-2 bg-indigo-500/20 rounded-lg shrink-0">
+              <Activity size={16} className="text-indigo-400 md:hidden" />
+              <Activity size={20} className="text-indigo-400 hidden md:block" />
             </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{results.length}</p>
-              <p className="text-sm text-gray-500">Contas monitoradas</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-500/20 rounded-lg">
-              <CheckCircle size={20} className="text-green-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{successCount}</p>
-              <p className="text-sm text-gray-500">Sucesso</p>
+            <div className="min-w-0">
+              <p className="text-xl md:text-2xl font-bold text-white">{results.length}</p>
+              <p className="hidden sm:block text-sm text-gray-500">Contas monitoradas</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-500/20 rounded-lg">
-              <XCircle size={20} className="text-red-400" />
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-5">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="p-1.5 md:p-2 bg-green-500/20 rounded-lg shrink-0">
+              <CheckCircle size={16} className="text-green-400 md:hidden" />
+              <CheckCircle size={20} className="text-green-400 hidden md:block" />
             </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{errorCount}</p>
-              <p className="text-sm text-gray-500">Com erro</p>
+            <div className="min-w-0">
+              <p className="text-xl md:text-2xl font-bold text-white">{successCount}</p>
+              <p className="hidden sm:block text-sm text-gray-500">Sucesso</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-5">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="p-1.5 md:p-2 bg-red-500/20 rounded-lg shrink-0">
+              <XCircle size={16} className="text-red-400 md:hidden" />
+              <XCircle size={20} className="text-red-400 hidden md:block" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xl md:text-2xl font-bold text-white">{errorCount}</p>
+              <p className="hidden sm:block text-sm text-gray-500">Com erro</p>
             </div>
           </div>
         </div>
