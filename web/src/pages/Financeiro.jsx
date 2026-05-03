@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { TrendingUp, ArrowDownCircle, Wallet } from 'lucide-react';
+import { TrendingUp, ArrowDownCircle, Wallet, Trash2, Plus, X } from 'lucide-react';
 import {
   LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -13,9 +13,80 @@ function parseBalance(val) {
   return isNaN(n) ? 0 : n;
 }
 
+function AccountModal({ account, ledger, onClose, onAdd, onDelete }) {
+  const [tab, setTab] = useState(0);
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const entries = ledger.filter(e => e.account_name === account && e.type === (tab === 0 ? 'balance' : 'withdrawal'));
+
+  async function handleAdd() {
+    if (!amount || isNaN(parseFloat(amount))) return;
+    setSaving(true);
+    await onAdd(account, tab === 0 ? 'balance' : 'withdrawal', parseFloat(amount), note);
+    setAmount(''); setNote(''); setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+      <div className="relative bg-gray-900 rounded-xl border border-gray-800 w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 shrink-0">
+          <h3 className="font-semibold text-white">{account}</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={18} /></button>
+        </div>
+        <div className="flex border-b border-gray-800 shrink-0">
+          <button onClick={() => setTab(0)} className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 0 ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-gray-500 hover:text-gray-300'}`}>Saldo Atual</button>
+          <button onClick={() => setTab(1)} className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 1 ? 'text-red-400 border-b-2 border-red-400' : 'text-gray-500 hover:text-gray-300'}`}>Saques</button>
+        </div>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {entries.length === 0 ? (
+            <p className="text-center text-gray-600 text-sm py-8">Nenhum lançamento.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-800/50 sticky top-0">
+                <tr>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium text-xs">Data</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium text-xs">Valor</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium text-xs">Obs</th>
+                  <th className="px-4 py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {entries.map(e => (
+                  <tr key={e.id} className="hover:bg-gray-800/40">
+                    <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{new Date(e.date).toLocaleDateString('pt-BR')}</td>
+                    <td className={`px-4 py-2.5 font-medium text-sm ${tab === 0 ? 'text-green-400' : 'text-red-400'}`}>R$ {Number(e.amount).toFixed(2)}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">{e.note || '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={() => onDelete(e.id)} className="text-gray-600 hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="border-t border-gray-800 p-3 flex gap-2 shrink-0">
+          <input type="number" placeholder="Valor" value={amount} onChange={e => setAmount(e.target.value)}
+            className="w-24 bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500" />
+          <input type="text" placeholder="Observação (opcional)" value={note} onChange={e => setNote(e.target.value)}
+            className="flex-1 bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500" />
+          <button onClick={handleAdd} disabled={saving || !amount}
+            className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 shrink-0">
+            <Plus size={14} /> Adicionar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Financeiro() {
   const [allData, setAllData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [ledger, setLedger] = useState([]);
+  const [modalAccount, setModalAccount] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -30,6 +101,11 @@ export default function Financeiro() {
       setLoading(false);
     }
     load();
+  }, []);
+
+  useEffect(() => {
+    supabase.from('financial_ledger').select('*').order('date', { ascending: false })
+      .then(({ data }) => { if (data) setLedger(data); });
   }, []);
 
   const successData = useMemo(() => allData.filter(r => r.status === 'success'), [allData]);
@@ -102,7 +178,7 @@ export default function Financeiro() {
     [saques]
   );
 
-  // Total de saques por conta
+  // Total de saques por conta (usado na seção Saques Detectados)
   const saquesPorConta = useMemo(() => {
     const map = {};
     for (const s of saques) {
@@ -112,6 +188,49 @@ export default function Financeiro() {
     }
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [saques]);
+
+  // Resumo por conta: Saldo Atual, Saques no Mês, Saques Totais
+  const accountSummaries = useMemo(() => {
+    const accs = [...new Set(allData.map(r => r.account_name))];
+    const now = new Date();
+    const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return accs.map((acc, i) => {
+      const runs = allData.filter(r => r.account_name === acc && r.balance != null);
+      runs.sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at));
+      const latestBal = runs.length > 0 ? parseBalance(runs[0].balance) : 0;
+      const balAdj = ledger.filter(e => e.account_name === acc && e.type === 'balance')
+        .reduce((s, e) => s + Number(e.amount), 0);
+      const saldoAtual = latestBal + balAdj;
+      const accSaques = saques.filter(s => s.account === acc);
+      const autoTotal = accSaques.reduce((s, e) => s + e.saque, 0);
+      const autoMes = accSaques.filter(s => (s.date || '').slice(0, 7) === mesAtual)
+        .reduce((s, e) => s + e.saque, 0);
+      const manWd = ledger.filter(e => e.account_name === acc && e.type === 'withdrawal');
+      const manTotal = manWd.reduce((s, e) => s + Number(e.amount), 0);
+      const manMes = manWd.filter(e => (e.date || '').slice(0, 7) === mesAtual)
+        .reduce((s, e) => s + Number(e.amount), 0);
+      return {
+        account: acc,
+        platform: runs[0]?.platform,
+        saldoAtual,
+        saquesMes: autoMes + manMes,
+        saquesTotal: autoTotal + manTotal,
+        color: COLORS[i % COLORS.length],
+      };
+    });
+  }, [allData, ledger, saques]);
+
+  async function addLedgerEntry(account, type, amount, note) {
+    const { data } = await supabase.from('financial_ledger').insert({
+      account_name: account, type, amount, note, date: new Date().toISOString()
+    }).select().single();
+    if (data) setLedger(prev => [data, ...prev]);
+  }
+
+  async function deleteLedgerEntry(id) {
+    await supabase.from('financial_ledger').delete().eq('id', id);
+    setLedger(prev => prev.filter(e => e.id !== id));
+  }
 
   if (loading) {
     return (
@@ -123,7 +242,53 @@ export default function Financeiro() {
 
   return (
     <div>
+      {modalAccount && (
+        <AccountModal
+          account={modalAccount}
+          ledger={ledger}
+          onClose={() => setModalAccount(null)}
+          onAdd={addLedgerEntry}
+          onDelete={deleteLedgerEntry}
+        />
+      )}
+
       <h2 className="text-xl md:text-2xl font-bold text-white mb-4 md:mb-6">Financeiro</h2>
+
+      {/* Carteira por conta */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mb-6">
+        <div className="px-4 md:px-5 py-4 border-b border-gray-800">
+          <h3 className="font-semibold text-white">Carteira por Conta</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Clique em uma conta para gerenciar lançamentos</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[480px]">
+            <thead className="bg-gray-800/50 text-left">
+              <tr>
+                <th className="px-5 py-3 font-medium text-gray-400">Conta</th>
+                <th className="px-5 py-3 font-medium text-gray-400">Saldo Atual</th>
+                <th className="px-5 py-3 font-medium text-gray-400">Saques no Mês</th>
+                <th className="px-5 py-3 font-medium text-gray-400">Saques Totais</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {accountSummaries.length === 0 ? (
+                <tr><td colSpan={4} className="px-5 py-8 text-center text-gray-600 text-sm">Sem dados.</td></tr>
+              ) : accountSummaries.map(acc => (
+                <tr key={acc.account} className="hover:bg-gray-800/40 cursor-pointer transition-colors"
+                    onClick={() => setModalAccount(acc.account)}>
+                  <td className="px-5 py-3">
+                    <p className="font-medium text-gray-100">{acc.account}</p>
+                    {acc.platform && <p className="text-xs mt-0.5" style={{ color: acc.color }}>{acc.platform}</p>}
+                  </td>
+                  <td className="px-5 py-3 font-semibold text-white">R$ {acc.saldoAtual.toFixed(2)}</td>
+                  <td className="px-5 py-3 text-red-400">R$ {acc.saquesMes.toFixed(2)}</td>
+                  <td className="px-5 py-3 text-red-400">R$ {acc.saquesTotal.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Cards de saldo atual por conta */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
