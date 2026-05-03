@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, XCircle, Clock, Activity, Play, Power, Wifi, WifiOff, RefreshCw, Terminal, TrendingUp, ChevronDown, ChevronUp, X, Image } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { CheckCircle, XCircle, Clock, Activity, Play, Power, Wifi, WifiOff, RefreshCw, Terminal, ChevronDown, ChevronUp, X, Image } from 'lucide-react';
 
 function PrintModal({ url, onClose }) {
   return (
@@ -27,13 +26,8 @@ export default function Dashboard() {
   const [logs, setLogs] = useState('');
   const [logsOpen, setLogsOpen] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
-  const [chartData, setChartData] = useState([]);
-  const [chartAccounts, setChartAccounts] = useState([]);
-  const [showChart, setShowChart] = useState(true);
   const [modalUrl, setModalUrl] = useState(null);
   const logsRef = useRef(null);
-
-  const CHART_COLORS = ['#818cf8','#34d399','#fb923c','#f472b6','#60a5fa','#a78bfa','#facc15'];
 
   async function fetchLatestResults() {
     const [{ data: configSchedule }, { data: configPrefs }] = await Promise.all([
@@ -58,30 +52,6 @@ export default function Dashboard() {
       setResults(Object.values(latestByAccount));
     }
     setLoading(false);
-  }
-
-  async function fetchChartData() {
-    const since = new Date();
-    since.setDate(since.getDate() - 30);
-    const { data } = await supabase
-      .from('account_run_results')
-      .select('account_name, balance, executed_at')
-      .eq('status', 'success')
-      .gte('executed_at', since.toISOString())
-      .order('executed_at', { ascending: true });
-
-    if (!data) return;
-    const accounts = [...new Set(data.map(r => r.account_name))];
-    setChartAccounts(accounts);
-    const byDate = {};
-    for (const r of data) {
-      const date = new Date(r.executed_at).toLocaleDateString('pt-BR');
-      if (!byDate[date]) byDate[date] = { date };
-      const raw = String(r.balance ?? '0').replace(/[^\d,./]/g, '').replace(',', '.');
-      const val = parseFloat(raw);
-      if (!isNaN(val) && val > 0) byDate[date][r.account_name] = val;
-    }
-    setChartData(Object.values(byDate));
   }
 
   async function checkAwsStatus() {
@@ -110,7 +80,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchLatestResults();
     checkAwsStatus();
-    fetchChartData();
     fetchLogs();
 
     const channel = supabase
@@ -319,6 +288,44 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Painel de Logs */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mb-6">
+        <button
+          className="w-full px-4 md:px-5 py-4 flex items-center justify-between hover:bg-gray-800/40 transition-colors"
+          onClick={() => { setLogsOpen(v => !v); if (!logsOpen && !logs) fetchLogs(); }}
+        >
+          <div className="flex items-center gap-2">
+            <Terminal size={16} className="text-green-400" />
+            <span className="font-semibold text-white">Logs da Máquina AWS</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {logsOpen && (
+              <button onClick={e => { e.stopPropagation(); fetchLogs(); }}
+                className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                <RefreshCw size={12} /> Atualizar
+              </button>
+            )}
+            {logsOpen ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
+          </div>
+        </button>
+        {logsOpen && (
+          <div className="border-t border-gray-800">
+            {logsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
+              </div>
+            ) : (
+              <pre
+                ref={logsRef}
+                className="text-xs text-green-300 font-mono bg-gray-950 p-4 overflow-auto max-h-72 whitespace-pre-wrap leading-5"
+              >
+                {logs || '(Sem logs)'}
+              </pre>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
         <div className="px-4 md:px-5 py-4 border-b border-gray-800">
           <h3 className="font-semibold text-white">Última Execução por Conta</h3>
@@ -381,78 +388,6 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
-          </div>
-        )}
-      </div>
-
-      {/* Gráfico de saldo ao longo do tempo */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mt-6">
-        <button
-          className="w-full px-4 md:px-5 py-4 flex items-center justify-between hover:bg-gray-800/40 transition-colors"
-          onClick={() => setShowChart(v => !v)}
-        >
-          <div className="flex items-center gap-2">
-            <TrendingUp size={16} className="text-indigo-400" />
-            <span className="font-semibold text-white">Saldo ao Longo do Tempo (últimos 30 dias)</span>
-          </div>
-          {showChart ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
-        </button>
-        {showChart && (
-          <div className="px-2 pb-4">
-            {chartData.length === 0 ? (
-              <p className="text-center text-gray-600 text-sm py-8">Nenhum dado disponível.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} labelStyle={{ color: '#e5e7eb' }} itemStyle={{ color: '#e5e7eb' }} />
-                  <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-                  {chartAccounts.map((acc, i) => (
-                    <Line key={acc} type="monotone" dataKey={acc} stroke={CHART_COLORS[i % CHART_COLORS.length]} dot={false} strokeWidth={2} connectNulls />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Painel de Logs */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mt-4">
-        <button
-          className="w-full px-4 md:px-5 py-4 flex items-center justify-between hover:bg-gray-800/40 transition-colors"
-          onClick={() => { setLogsOpen(v => !v); if (!logsOpen && !logs) fetchLogs(); }}
-        >
-          <div className="flex items-center gap-2">
-            <Terminal size={16} className="text-green-400" />
-            <span className="font-semibold text-white">Logs da Máquina AWS</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {logsOpen && (
-              <button onClick={e => { e.stopPropagation(); fetchLogs(); }}
-                className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
-                <RefreshCw size={12} /> Atualizar
-              </button>
-            )}
-            {logsOpen ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
-          </div>
-        </button>
-        {logsOpen && (
-          <div className="border-t border-gray-800">
-            {logsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
-              </div>
-            ) : (
-              <pre
-                ref={logsRef}
-                className="text-xs text-green-300 font-mono bg-gray-950 p-4 overflow-auto max-h-72 whitespace-pre-wrap leading-5"
-              >
-                {logs || '(Sem logs)'}
-              </pre>
-            )}
           </div>
         )}
       </div>

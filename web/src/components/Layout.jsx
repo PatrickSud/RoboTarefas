@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LogOut, LayoutDashboard, Users, History } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, History, DollarSign } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const sidebarLinkClass = ({ isActive }) =>
@@ -40,6 +40,10 @@ export default function Layout() {
             <Users size={18} />
             Contas
           </NavLink>
+          <NavLink to="/financeiro" className={sidebarLinkClass}>
+            <DollarSign size={18} />
+            Financeiro
+          </NavLink>
           <NavLink to="/history" className={sidebarLinkClass}>
             <History size={18} />
             Histórico
@@ -77,6 +81,10 @@ export default function Layout() {
         <NavLink to="/accounts" className={bottomNavLinkClass}>
           <Users size={20} />
           Contas
+        </NavLink>
+        <NavLink to="/financeiro" className={bottomNavLinkClass}>
+          <DollarSign size={20} />
+          Financeiro
         </NavLink>
         <NavLink to="/history" className={bottomNavLinkClass}>
           <History size={20} />
