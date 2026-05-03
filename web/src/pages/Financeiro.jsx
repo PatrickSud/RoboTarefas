@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, ArrowDownCircle, Wallet } from 'lucide-react';
 import {
   LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -65,6 +65,54 @@ export default function Financeiro() {
     [latestByAccount]
   );
 
+  // Detectar saques: balance diminuiu em relação à execução anterior da mesma conta
+  const saques = useMemo(() => {
+    const withBalance = allData.filter(r => r.balance !== null && r.balance !== undefined);
+    // Agrupar por conta, ordenado por data crescente
+    const byAccount = {};
+    for (const r of withBalance) {
+      if (!byAccount[r.account_name]) byAccount[r.account_name] = [];
+      byAccount[r.account_name].push(r);
+    }
+    const result = [];
+    for (const records of Object.values(byAccount)) {
+      records.sort((a, b) => new Date(a.executed_at) - new Date(b.executed_at));
+      for (let i = 1; i < records.length; i++) {
+        const prev = records[i - 1];
+        const curr = records[i];
+        const valPrev = parseBalance(prev.balance);
+        const valCurr = parseBalance(curr.balance);
+        if (valPrev > 0 && valCurr < valPrev) {
+          result.push({
+            account: curr.account_name,
+            platform: curr.platform,
+            date: curr.executed_at,
+            anterior: valPrev,
+            atual: valCurr,
+            saque: valPrev - valCurr,
+          });
+        }
+      }
+    }
+    return result.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [allData]);
+
+  const totalSaques = useMemo(
+    () => saques.reduce((s, r) => s + r.saque, 0),
+    [saques]
+  );
+
+  // Total de saques por conta
+  const saquesPorConta = useMemo(() => {
+    const map = {};
+    for (const s of saques) {
+      if (!map[s.account]) map[s.account] = { account: s.account, platform: s.platform, total: 0, count: 0 };
+      map[s.account].total += s.saque;
+      map[s.account].count += 1;
+    }
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [saques]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -126,6 +174,78 @@ export default function Financeiro() {
         )}
       </div>
 
+      {/* Saques Detectados */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div className="px-4 md:px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ArrowDownCircle size={16} className="text-red-400" />
+            <h3 className="font-semibold text-white">Saques Detectados (últimos 30 dias)</h3>
+          </div>
+          {saques.length > 0 && (
+            <span className="text-xs text-gray-500">{saques.length} evento(s)</span>
+          )}
+        </div>
+
+        {saques.length === 0 ? (
+          <div className="p-8 text-center text-gray-600 text-sm">
+            <Wallet size={28} className="mx-auto mb-2 opacity-30" />
+            <p>Nenhum saque detectado no período.</p>
+          </div>
+        ) : (
+          <>
+            {/* Cards de resumo por conta */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-4 border-b border-gray-800">
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 col-span-2 sm:col-span-1">
+                <p className="text-xs text-red-300 mb-1">Total sacado</p>
+                <p className="text-xl font-bold text-white">R$ {totalSaques.toFixed(2)}</p>
+                <p className="text-xs text-gray-500 mt-1">{saquesPorConta.length} conta(s)</p>
+              </div>
+              {saquesPorConta.map((s, i) => (
+                <div key={s.account} className="bg-gray-800/60 border border-gray-700 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 truncate mb-1">{s.account}</p>
+                  <p className="text-lg font-bold text-red-400">- R$ {s.total.toFixed(2)}</p>
+                  <p className="text-xs text-gray-600 mt-1">{s.count} saque(s)</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Tabela de eventos */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead className="bg-gray-800/50 text-left">
+                  <tr>
+                    <th className="px-5 py-3 font-medium text-gray-400">Data</th>
+                    <th className="px-5 py-3 font-medium text-gray-400">Conta</th>
+                    <th className="px-5 py-3 font-medium text-gray-400">Plataforma</th>
+                    <th className="px-5 py-3 font-medium text-gray-400">Saldo Anterior</th>
+                    <th className="px-5 py-3 font-medium text-gray-400">Saldo Atual</th>
+                    <th className="px-5 py-3 font-medium text-gray-400">Saque</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {saques.map((s, i) => (
+                    <tr key={i} className="hover:bg-gray-800/40">
+                      <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
+                        {new Date(s.date).toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-5 py-3 font-medium text-gray-100">{s.account}</td>
+                      <td className="px-5 py-3 text-gray-400">{s.platform || '—'}</td>
+                      <td className="px-5 py-3 text-gray-400">R$ {s.anterior.toFixed(2)}</td>
+                      <td className="px-5 py-3 text-gray-400">R$ {s.atual.toFixed(2)}</td>
+                      <td className="px-5 py-3">
+                        <span className="inline-flex items-center gap-1 text-red-400 font-semibold">
+                          <ArrowDownCircle size={13} />
+                          R$ {s.saque.toFixed(2)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
