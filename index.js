@@ -262,7 +262,8 @@ async function executarAutomacao() {
       '--autoplay-policy=no-user-gesture-required', // Força o vídeo a rodar sozinho
       '--disable-gpu', // Desativa a dependência de placa de vídeo do Windows
       '--mute-audio', // Muta o áudio para evitar bugs de drivers de som
-      '--window-size=1280,720'
+      '--window-size=1280,720',
+      '--lang=pt-BR' // Força idioma do navegador para Português do Brasil
     ]
   })
 
@@ -279,7 +280,10 @@ async function executarAutomacao() {
           `\n⟳ Retentativa ${tentativaAtual}/${MAX_TENTATIVAS} para ${conta.nome}...`
         )
 
-      const context = await browser.newContext()
+      const context = await browser.newContext({
+        locale: 'pt-BR',
+        timezoneId: 'America/Sao_Paulo'
+      })
       const page = await context.newPage()
       let _retry = false
 
