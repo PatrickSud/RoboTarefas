@@ -102,7 +102,7 @@ function chamarGoogleAI(payload) {
     }
 
     const body = JSON.stringify(payload)
-    const model = process.env.GOOGLE_AI_MODEL || 'gemini-2.0-flash'
+    const model = process.env.GOOGLE_AI_MODEL || 'gemini-2.5-flash'
     const req = https.request(
       {
         hostname: 'generativelanguage.googleapis.com',

@@ -2,7 +2,7 @@ require('dotenv').config()
 const https = require('https')
 
 const apiKey = process.env.GOOGLE_AI_API_KEY
-const model = process.env.GOOGLE_AI_MODEL || 'gemini-2.0-flash'
+const model = process.env.GOOGLE_AI_MODEL || 'gemini-2.5-flash'
 
 if (!apiKey) {
   console.error('❌ GOOGLE_AI_API_KEY não encontrada no .env')
