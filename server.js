@@ -50,6 +50,19 @@ function isAuthorized(req) {
   return authHeader === `Bearer ${token}`
 }
 
+function unauthorizedMessage(req) {
+  if (!token) {
+    return 'Não autorizado: ROBOT_API_TOKEN não está configurado na AWS.'
+  }
+
+  const authHeader = req.headers.authorization || ''
+  if (!authHeader) {
+    return 'Não autorizado: cabeçalho Authorization não foi recebido.'
+  }
+
+  return 'Não autorizado: ROBOT_API_TOKEN da AWS é diferente do token configurado no Netlify.'
+}
+
 function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true') {
   shutdownEnabled = shouldShutdown
   running = true
@@ -97,13 +110,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.url === '/health' && req.method === 'GET') {
-    sendJson(res, 200, { ok: true, running, lastRun, lastExitCode })
+    sendJson(res, 200, {
+      ok: true,
+      running,
+      lastRun,
+      lastExitCode,
+      tokenConfigured: Boolean(token)
+    })
     return
   }
 
   if (req.url === '/run' && req.method === 'POST') {
     if (!isAuthorized(req)) {
-      sendJson(res, 401, { ok: false, message: 'Não autorizado.' })
+      sendJson(res, 401, { ok: false, message: unauthorizedMessage(req) })
       return
     }
 
@@ -129,7 +148,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url === '/cleanup-prints' && req.method === 'POST') {
     if (!isAuthorized(req)) {
-      sendJson(res, 401, { ok: false, message: 'Não autorizado.' })
+      sendJson(res, 401, { ok: false, message: unauthorizedMessage(req) })
       return
     }
 
@@ -140,7 +159,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url === '/logs' && req.method === 'GET') {
     if (!isAuthorized(req)) {
-      sendJson(res, 401, { ok: false, message: 'Não autorizado.' })
+      sendJson(res, 401, { ok: false, message: unauthorizedMessage(req) })
       return
     }
     try {

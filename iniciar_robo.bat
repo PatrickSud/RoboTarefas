@@ -10,8 +10,8 @@ echo =======================================================
 echo Buscando atualizacoes de codigo no GitHub...
 echo =======================================================
 
-:: Limpa mudancas locais em arquivos de sistema para evitar conflitos no pull
-git checkout package.json package-lock.json >> log_sistema.txt 2>&1
+:: Limpa mudancas locais para evitar conflitos no pull em arquivos atualizados pelo GitHub
+git reset --hard HEAD >> log_sistema.txt 2>&1
 git pull origin master >> log_sistema.txt 2>&1
 echo.
 
