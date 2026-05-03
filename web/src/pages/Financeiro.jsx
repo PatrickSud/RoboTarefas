@@ -36,16 +36,19 @@ export default function Financeiro() {
 
   // Gráfico de linha: saldo por data por conta
   const { lineData, accounts } = useMemo(() => {
-    const accs = [...new Set(successData.map(r => r.account_name))];
+    // Usa todos os registros com balance não-nulo (sucesso ou não)
+    const withBalance = allData.filter(r => r.balance !== null && r.balance !== undefined);
+    const accs = [...new Set(withBalance.map(r => r.account_name))];
     const byDate = {};
-    for (const r of successData) {
+    for (const r of withBalance) {
       const date = new Date(r.executed_at).toLocaleDateString('pt-BR');
       if (!byDate[date]) byDate[date] = { date };
       const val = parseBalance(r.balance);
-      if (val > 0) byDate[date][r.account_name] = val;
+      // Atribui mesmo se val === 0 para manter a linha visível
+      byDate[date][r.account_name] = val;
     }
     return { lineData: Object.values(byDate), accounts: accs };
-  }, [successData]);
+  }, [allData]);
 
   // Último saldo por conta (cards de resumo)
   const latestByAccount = useMemo(() => {
@@ -131,7 +134,16 @@ export default function Financeiro() {
               <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }} labelStyle={{ color: '#e5e7eb' }} itemStyle={{ color: '#e5e7eb' }} />
               <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
               {accounts.map((acc, i) => (
-                <Line key={acc} type="monotone" dataKey={acc} stroke={COLORS[i % COLORS.length]} dot={false} strokeWidth={2} connectNulls />
+                <Line
+                  key={acc}
+                  type="monotone"
+                  dataKey={(row) => row[acc] ?? null}
+                  name={acc}
+                  stroke={COLORS[i % COLORS.length]}
+                  dot={{ r: 3, fill: COLORS[i % COLORS.length] }}
+                  strokeWidth={2}
+                  connectNulls={true}
+                />
               ))}
             </LineChart>
           </ResponsiveContainer>
