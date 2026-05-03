@@ -46,10 +46,13 @@ function isAuthorized(req) {
   return authHeader === `Bearer ${token}`
 }
 
-function runRobot() {
+function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true') {
   running = true
   lastRun = new Date().toISOString()
   lastExitCode = null
+  console.log(
+    `Desligamento automático: ${shouldShutdown ? 'ATIVO' : 'INATIVO'}`
+  )
 
   const child = spawn(process.execPath, ['index.js'], {
     cwd: __dirname,
@@ -62,7 +65,7 @@ function runRobot() {
     lastExitCode = code
     console.log(`Execução do robô finalizada com código ${code}`)
 
-    if (process.env.AUTO_SHUTDOWN === 'true') {
+    if (shouldShutdown) {
       console.log('AUTO_SHUTDOWN ativo. Desligando a máquina em 60 segundos...')
       spawn('shutdown', ['/s', '/t', '60'])
     } else {
@@ -104,9 +107,17 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    let body = ''
+    for await (const chunk of req) body += chunk
+    const { autoShutdown: bodyShutdown } = JSON.parse(body || '{}')
+    const shouldShutdown =
+      bodyShutdown !== undefined
+        ? bodyShutdown
+        : process.env.AUTO_SHUTDOWN === 'true'
+
     if (idleTimer) clearTimeout(idleTimer)
     await runCleanup()
-    runRobot()
+    runRobot(shouldShutdown)
     sendJson(res, 202, { ok: true, message: 'Execução iniciada.', lastRun })
     return
   }

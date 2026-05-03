@@ -351,29 +351,8 @@ async function executarAutomacao() {
           }
         }
 
-        try {
-          caminhoPrintSucesso = `sucesso_${conta.nome}.png`
-          await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
-          console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
-        } catch (e) {
-          caminhoPrintSucesso = ''
-        }
-
-        console.log("Indo para 'Meu' para capturar o saldo...")
-        await page.goto('https://vlm7.com/')
-        await page.waitForTimeout(3000)
-        try {
-          await page
-            .locator('.close, .van-icon-cross')
-            .first()
-            .click({ timeout: 2000 })
-        } catch (err) {}
-        if (page.url().includes('/notice') || page.url().includes('/article')) {
-          await page.goto('https://vlm7.com/#/home')
-          await page.waitForTimeout(2000)
-        }
-
-        await page.locator('div:has-text("Meu")').last().click()
+        console.log('Navegando para perfil VLM para capturar saldo...')
+        await page.goto('https://vlm7.com/#/user')
         await page.waitForTimeout(3000)
 
         const locSaldo = page.locator(
@@ -384,6 +363,14 @@ async function executarAutomacao() {
         const carteiraTexto = await locSaldo.innerText()
         carteiraReceita = carteiraTexto.replace(/[^0-9.,]/g, '').trim()
         console.log(`Saldo capturado VLM: ${carteiraReceita}`)
+
+        try {
+          caminhoPrintSucesso = `sucesso_${conta.nome}.png`
+          await page.screenshot({ path: caminhoPrintSucesso, fullPage: true })
+          console.log(`Print de sucesso salvo como ${caminhoPrintSucesso}`)
+        } catch (e) {
+          caminhoPrintSucesso = ''
+        }
       } else if (conta.plataforma === 'Signet') {
         // FLUXO SIGNET (NOVA PLATAFORMA)
         console.log('Acessando tela de login Signet...')
@@ -579,55 +566,6 @@ async function executarAutomacao() {
         await page.goto('https://gkwindbr.com/login/')
         await page.waitForTimeout(3000)
 
-        console.log('Verificando idioma da página GK Wind...')
-        try {
-          const bodyText = await page.innerText('body')
-          const emIngles =
-            bodyText.includes('Password') ||
-            bodyText.includes('Sign in') ||
-            (bodyText.includes('Login') &&
-              !bodyText.includes('Entrar') &&
-              !bodyText.includes('Senha'))
-          if (emIngles) {
-            console.log(
-              'Página em inglês detectada. Tentando mudar para português...'
-            )
-            try {
-              const langSelector = page
-                .locator(
-                  '[class*="lang"], [class*="language"], .lang-switch, [class*="locale"]'
-                )
-                .first()
-              if (await langSelector.isVisible({ timeout: 2000 })) {
-                await langSelector.click()
-                await page.waitForTimeout(1000)
-                await page
-                  .getByText(/Português|PT|Brasil/i)
-                  .first()
-                  .click()
-                await page.waitForTimeout(2000)
-              } else {
-                console.log(
-                  'Seletor de idioma não encontrado. Recarregando em pt-BR...'
-                )
-                await page.goto('https://gkwindbr.com/login/?lang=pt')
-                await page.waitForTimeout(3000)
-              }
-            } catch (e) {
-              console.log(
-                'Aviso: Não foi possível mudar o idioma da GK Wind automaticamente.'
-              )
-            }
-          } else {
-            console.log('Página já está em português.')
-          }
-        } catch (e) {
-          console.log(
-            'Aviso: Falha na verificação de idioma GK Wind:',
-            e.message
-          )
-        }
-
         console.log('Preenchendo credenciais GK Wind...')
         try {
           const inputs = page.locator('input')
@@ -665,6 +603,34 @@ async function executarAutomacao() {
           }
         } catch (e) {
           console.log('Aviso: Falha no login automático GK Wind:', e.message)
+        }
+
+        // Troca de idioma para Português (caso esteja em Inglês)
+        try {
+          const btnSwitchLang = page.getByRole('button', {
+            name: 'Switch Language'
+          })
+          const emIngles = await btnSwitchLang
+            .isVisible({ timeout: 3000 })
+            .catch(() => false)
+
+          if (emIngles) {
+            console.log('Idioma em Inglês. Trocando para Português...')
+            await btnSwitchLang.click()
+            await page.waitForTimeout(1000)
+            await page.getByRole('option', { name: 'Português' }).click()
+            console.log(
+              'Idioma alterado para Português. Aguardando recarregamento...'
+            )
+            await page.waitForTimeout(3000)
+          } else {
+            console.log('Idioma já está em Português.')
+          }
+        } catch (e) {
+          console.log(
+            'Aviso: Falha ao verificar/trocar idioma GK Wind:',
+            e.message
+          )
         }
 
         console.log('Aguardando comunicado de login...')
@@ -813,51 +779,37 @@ async function executarAutomacao() {
           console.log('Aviso: Falha no preenchimento de login Arla.')
         }
 
-        // Verificar idioma pós-login Arla
-        console.log('Verificando idioma pós-login Arla...')
+        // Troca de idioma para Português (caso esteja em Espanhol)
         try {
-          const bodyText = await page.innerText('body')
-          const emEspanhol =
-            /Iniciar sesión|Bienvenido|Granja|Alimentar|Clic para iniciar/i.test(
-              bodyText
-            ) &&
-            !bodyText.includes('fazenda') &&
-            !bodyText.includes('Faça login')
-          if (emEspanhol) {
+          const btnPortugues = page
+            .locator('div')
+            .filter({ hasText: /^Portugues do Brasil$/ })
+            .first()
+          const jaEmPortugues = await btnPortugues
+            .isVisible({ timeout: 3000 })
+            .catch(() => false)
+
+          if (!jaEmPortugues) {
+            console.log('Idioma diferente de Português. Trocando...')
+            await page.locator('i').first().click()
+            await page.waitForTimeout(2000)
+            await page
+              .locator('div')
+              .filter({ hasText: /^Portugues do Brasil$/ })
+              .first()
+              .click()
             console.log(
-              'Página em espanhol detectada. Tentando mudar para português...'
+              'Idioma alterado para Português. Aguardando recarregamento...'
             )
-            try {
-              const langSelector = page
-                .locator(
-                  '[class*="lang"], [class*="language"], .lang-switch, [class*="locale"], [class*="idioma"]'
-                )
-                .first()
-              if (await langSelector.isVisible({ timeout: 2000 })) {
-                await langSelector.click()
-                await page.waitForTimeout(1000)
-                await page
-                  .getByText(/Português|PT-BR|Brasil/i)
-                  .first()
-                  .click()
-                await page.waitForTimeout(2000)
-              } else {
-                console.log(
-                  'Seletor de idioma Arla não encontrado. Tentando via URL...'
-                )
-                await page.goto('https://arlavt.com/m/login?lang=pt')
-                await page.waitForTimeout(2000)
-              }
-            } catch (e) {
-              console.log(
-                'Aviso: Não foi possível mudar o idioma da Arla automaticamente.'
-              )
-            }
+            await page.waitForTimeout(5000)
           } else {
-            console.log('Página Arla já está em português.')
+            console.log('Idioma já está em Português.')
           }
         } catch (e) {
-          console.log('Aviso: Falha na verificação de idioma Arla:', e.message)
+          console.log(
+            'Aviso: Falha ao verificar/trocar idioma Arla:',
+            e.message
+          )
         }
 
         // 1. Fechar comunicados (Notificação do sistema)
@@ -1152,7 +1104,7 @@ async function executarAutomacao() {
         console.log(`Saldo capturado: ${carteiraReceita}`)
       }
 
-      relatorioFinal += `${conta.nome} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`
+      relatorioFinal += `${conta.nome} - ${conta.plataforma} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`
 
       // Upload do print de sucesso, se existir
       let urlPrintSucesso = ''
