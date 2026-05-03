@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { TrendingUp, ArrowDownCircle, Wallet, Trash2, Plus, X } from 'lucide-react';
+import { TrendingUp, ArrowDownCircle, Wallet, Trash2, Plus, X, Settings } from 'lucide-react';
 import {
   LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -121,6 +121,9 @@ export default function Financeiro() {
   const [loading, setLoading] = useState(true);
   const [ledger, setLedger] = useState([]);
   const [modalAccount, setModalAccount] = useState(null);
+  const [currencyRates, setCurrencyRates] = useState({});
+  const [showCurrencyConfig, setShowCurrencyConfig] = useState(false);
+  const [editRates, setEditRates] = useState({});
 
   useEffect(() => {
     async function load() {
@@ -140,6 +143,15 @@ export default function Financeiro() {
   useEffect(() => {
     supabase.from('financial_ledger').select('*').order('date', { ascending: false })
       .then(({ data }) => { if (data) setLedger(data); });
+  }, []);
+
+  useEffect(() => {
+    supabase.from('global_settings').select('value').eq('key', 'currency_rates').maybeSingle()
+      .then(({ data }) => {
+        const parsed = data?.value ? JSON.parse(data.value) : {};
+        setCurrencyRates(parsed);
+        setEditRates(parsed);
+      });
   }, []);
 
   const successData = useMemo(() => allData.filter(r => r.status === 'success'), [allData]);
@@ -240,25 +252,29 @@ export default function Financeiro() {
       const latestBal = runs.length > 0 ? parseBalance(runs[0].balance) : 0;
       const balAdj = ledger.filter(e => e.account_name === acc && e.type === 'balance')
         .reduce((s, e) => s + Number(e.amount), 0);
-      const saldoAtual = latestBal + balAdj;
+      const platform = runs[0]?.platform || allData.find(r => r.account_name === acc)?.platform;
+      const rateConfig = currencyRates[platform];
+      const convRate = rateConfig?.rate ? Number(rateConfig.rate) : 1;
+      const saldoAtual = (latestBal * convRate) + balAdj;
       const accSaques = saques.filter(s => s.account === acc && !excludedSaqKeys.has(s.date));
-      const autoTotal = accSaques.reduce((s, e) => s + e.saque, 0);
+      const autoTotal = accSaques.reduce((s, e) => s + e.saque * convRate, 0);
       const autoMes = accSaques.filter(s => (s.date || '').slice(0, 7) === mesAtual)
-        .reduce((s, e) => s + e.saque, 0);
+        .reduce((s, e) => s + e.saque * convRate, 0);
       const manWd = ledger.filter(e => e.account_name === acc && e.type === 'withdrawal');
       const manTotal = manWd.reduce((s, e) => s + Number(e.amount), 0);
       const manMes = manWd.filter(e => (e.date || '').slice(0, 7) === mesAtual)
         .reduce((s, e) => s + Number(e.amount), 0);
       return {
         account: acc,
-        platform: runs[0]?.platform || allData.find(r => r.account_name === acc)?.platform,
+        platform,
         saldoAtual,
+        currency: rateConfig ? { symbol: rateConfig.symbol, raw: latestBal } : null,
         saquesMes: autoMes + manMes,
         saquesTotal: autoTotal + manTotal,
         color: COLORS[i % COLORS.length],
       };
     });
-  }, [allData, ledger, saques]);
+  }, [allData, ledger, saques, currencyRates]);
 
   async function addLedgerEntry(account, type, amount, note) {
     const { data } = await supabase.from('financial_ledger').insert({
@@ -270,6 +286,15 @@ export default function Financeiro() {
   async function deleteLedgerEntry(id) {
     await supabase.from('financial_ledger').delete().eq('id', id);
     setLedger(prev => prev.filter(e => e.id !== id));
+  }
+
+  async function saveCurrencyRates() {
+    await supabase.from('global_settings').upsert(
+      { key: 'currency_rates', value: JSON.stringify(editRates) },
+      { onConflict: 'key' }
+    );
+    setCurrencyRates({ ...editRates });
+    setShowCurrencyConfig(false);
   }
 
   async function addLedgerExclusion(account, sourceId, sourceType) {
@@ -307,10 +332,47 @@ export default function Financeiro() {
 
       {/* Carteira por conta */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mb-6">
-        <div className="px-4 md:px-5 py-4 border-b border-gray-800">
-          <h3 className="font-semibold text-white">Carteira por Conta</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Clique em uma conta para gerenciar lançamentos</p>
+        <div className="px-4 md:px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-white">Carteira por Conta</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Clique em uma conta para gerenciar lançamentos</p>
+          </div>
+          <button onClick={() => setShowCurrencyConfig(v => !v)}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-colors shrink-0 mt-0.5 ${showCurrencyConfig ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300' : 'border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600'}`}>
+            <Settings size={12} /> Câmbio
+          </button>
         </div>
+        {showCurrencyConfig && (
+          <div className="px-4 md:px-5 py-4 border-b border-gray-800 bg-gray-800/30">
+            <p className="text-xs text-gray-400 mb-3">Taxa de conversão para BRL por plataforma. Deixe em branco para usar o valor original.</p>
+            <div className="flex flex-col gap-2">
+              {[...new Set(allData.map(r => r.platform).filter(Boolean))].map(p => (
+                <div key={p} className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs w-28 shrink-0 truncate">{p}</span>
+                  <input
+                    placeholder="Símbolo (ex: GTQ)"
+                    value={editRates[p]?.symbol || ''}
+                    onChange={ev => setEditRates(prev => ({ ...prev, [p]: { ...prev[p], symbol: ev.target.value } }))}
+                    className="w-24 bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <input
+                    type="number"
+                    placeholder="1 [moeda] = ? BRL"
+                    value={editRates[p]?.rate || ''}
+                    onChange={ev => setEditRates(prev => ({ ...prev, [p]: { ...prev[p], rate: ev.target.value } }))}
+                    className="w-36 bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  {editRates[p]?.rate && editRates[p]?.symbol && (
+                    <span className="text-gray-600 text-xs">1 {editRates[p].symbol} = R$ {Number(editRates[p].rate).toFixed(4)}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button onClick={saveCurrencyRates} className="mt-3 flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-lg hover:bg-indigo-700">
+              <Plus size={12} /> Salvar configurações
+            </button>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead className="bg-gray-800/50 text-left">
@@ -331,7 +393,12 @@ export default function Financeiro() {
                     <p className="font-medium text-gray-100">{acc.account}</p>
                     {acc.platform && <p className="text-xs mt-0.5" style={{ color: acc.color }}>{acc.platform}</p>}
                   </td>
-                  <td className="px-5 py-3 font-semibold text-white">R$ {acc.saldoAtual.toFixed(2)}</td>
+                  <td className="px-5 py-3 font-semibold text-white">
+                    R$ {acc.saldoAtual.toFixed(2)}
+                    {acc.currency && (
+                      <span className="block text-xs text-gray-500 font-normal mt-0.5">{acc.currency.symbol} {acc.currency.raw.toFixed(2)}</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-red-400">R$ {acc.saquesMes.toFixed(2)}</td>
                   <td className="px-5 py-3 text-red-400">R$ {acc.saquesTotal.toFixed(2)}</td>
                 </tr>
