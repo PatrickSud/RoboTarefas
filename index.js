@@ -628,30 +628,36 @@ async function executarAutomacao() {
             console.log('Aviso: Falha no login automático GK Wind:', e.message)
           }
 
-          // Troca de idioma para Português (caso esteja em Inglês)
           try {
             const btnSwitchLang = page.getByRole('button', {
-              name: 'Switch Language'
+              name: /Switch Language|Idioma|Language/i
             })
-            const emIngles = await btnSwitchLang
-              .isVisible({ timeout: 3000 })
+            const deveTrocarIdioma = await btnSwitchLang
+              .isVisible({ timeout: 1500 })
               .catch(() => false)
 
-            if (emIngles) {
-              console.log('Idioma em Inglês. Trocando para Português...')
+            if (
+              deveTrocarIdioma &&
+              !(await page
+                .getByText(/Check-in Diário|Saldo Total|Perfil/i)
+                .first()
+                .isVisible({ timeout: 1000 })
+                .catch(() => false))
+            ) {
+              console.log('Tentando ajustar idioma GK Wind para Português...')
               await btnSwitchLang.click()
               await page.waitForTimeout(1000)
-              await page.getByRole('option', { name: 'Português' }).click()
-              console.log(
-                'Idioma alterado para Português. Aguardando recarregamento...'
-              )
+              await page
+                .getByRole('option', {
+                  name: /Português|Portugues|Portuguese/i
+                })
+                .first()
+                .click({ timeout: 3000 })
               await page.waitForTimeout(3000)
-            } else {
-              console.log('Idioma já está em Português.')
             }
           } catch (e) {
             console.log(
-              'Aviso: Falha ao verificar/trocar idioma GK Wind:',
+              'Aviso: Não foi possível ajustar idioma GK Wind, seguindo fluxo multilíngue:',
               e.message
             )
           }
@@ -676,7 +682,7 @@ async function executarAutomacao() {
           // DEFESA: Se ele foi para uma página em branco ou artigo por clique acidental, nós forçamos a volta
           try {
             await page
-              .getByText(/Check-in Diário/i)
+              .getByText(/Check-in Diário|Daily Check-in|Check-in/i)
               .first()
               .waitFor({ state: 'visible', timeout: 3000 })
           } catch (e) {
@@ -699,14 +705,16 @@ async function executarAutomacao() {
 
             console.log("Tentando clicar no botão 'Fazer Check-in Agora'...")
             const btnCheckin = page
-              .getByRole('button', { name: 'Fazer Check-in Agora' })
+              .getByRole('button', {
+                name: /Fazer Check-in Agora|Check-in Now|Check in now|Check-in/i
+              })
               .first()
             if (await btnCheckin.isVisible({ timeout: 5000 })) {
               await btnCheckin.click()
               await page.waitForTimeout(2000)
               try {
                 await page
-                  .getByRole('button', { name: /Confirmar/i })
+                  .getByRole('button', { name: /Confirmar|Confirm|OK/i })
                   .first()
                   .click({ timeout: 3000 })
                 await page.waitForTimeout(1000)
@@ -727,7 +735,7 @@ async function executarAutomacao() {
             try {
               // Tentando como 'link' que é muito mais preciso para abas inferiores
               await page
-                .getByRole('link', { name: 'Perfil' })
+                .getByRole('link', { name: /Perfil|Profile/i })
                 .first()
                 .click({ timeout: 4000 })
             } catch (e) {
@@ -739,7 +747,7 @@ async function executarAutomacao() {
               }
               await page.waitForTimeout(2000)
               await page
-                .getByRole('link', { name: 'Perfil' })
+                .getByRole('link', { name: /Perfil|Profile/i })
                 .first()
                 .click({ timeout: 5000 })
             }
@@ -748,15 +756,14 @@ async function executarAutomacao() {
             console.log('Capturando Saldo Total...')
             const bodyText = await page.innerText('body')
             const match = bodyText.match(
-              /([\d.,]+)\s*Saldo Total|Saldo Total[\s:R$]*([\d.,]+)/i
+              /([\d.,]+)\s*(Saldo Total|Total Balance)|(Saldo Total|Total Balance)[\s:R$]*([\d.,]+)/i
             )
             if (match) {
-              carteiraReceita = match[1] || match[2]
+              carteiraReceita = match[1] || match[4]
             } else {
-              // Fallback que busca o elemento irmão
               const saldoTxt = await page
                 .locator('div')
-                .filter({ hasText: /^Saldo Total$/ })
+                .filter({ hasText: /^(Saldo Total|Total Balance)$/i })
                 .locator('xpath=preceding-sibling::div')
                 .innerText()
               carteiraReceita = saldoTxt.replace(/[^0-9.,]/g, '').trim()
@@ -802,35 +809,39 @@ async function executarAutomacao() {
             console.log('Aviso: Falha no preenchimento de login Arla.')
           }
 
-          // Troca de idioma para Português (caso esteja em Espanhol)
           try {
             const btnPortugues = page
               .locator('div')
-              .filter({ hasText: /^Portugues do Brasil$/ })
+              .filter({ hasText: /^Portugu[eê]s do Brasil$/i })
               .first()
             const jaEmPortugues = await btnPortugues
-              .isVisible({ timeout: 3000 })
+              .isVisible({ timeout: 1500 })
               .catch(() => false)
 
-            if (!jaEmPortugues) {
-              console.log('Idioma diferente de Português. Trocando...')
-              await page.locator('i').first().click()
+            if (
+              !jaEmPortugues &&
+              !(await page
+                .getByText(/fazenda|granja|farm/i)
+                .first()
+                .isVisible({ timeout: 1000 })
+                .catch(() => false))
+            ) {
+              console.log('Tentando ajustar idioma Arla para Português...')
+              await page
+                .locator('.van-icon, i')
+                .first()
+                .click({ timeout: 3000 })
               await page.waitForTimeout(2000)
               await page
                 .locator('div')
-                .filter({ hasText: /^Portugues do Brasil$/ })
+                .filter({ hasText: /^Portugu[eê]s do Brasil$/i })
                 .first()
-                .click()
-              console.log(
-                'Idioma alterado para Português. Aguardando recarregamento...'
-              )
+                .click({ timeout: 3000 })
               await page.waitForTimeout(5000)
-            } else {
-              console.log('Idioma já está em Português.')
             }
           } catch (e) {
             console.log(
-              'Aviso: Falha ao verificar/trocar idioma Arla:',
+              'Aviso: Não foi possível ajustar idioma Arla, seguindo fluxo multilíngue:',
               e.message
             )
           }
@@ -840,7 +851,9 @@ async function executarAutomacao() {
           try {
             // O seletor .van-dialog__confirm é o padrão para botões "confirme" em diálogos Vant
             const btnConfirme = page
-              .locator('.van-dialog__confirm, button:has-text("confirme")')
+              .locator(
+                '.van-dialog__confirm, button:has-text("confirme"), button:has-text("Confirmar"), button:has-text("Confirm"), button:has-text("Aceptar")'
+              )
               .first()
             if (await btnConfirme.isVisible({ timeout: 10000 })) {
               await btnConfirme.click()
@@ -864,25 +877,36 @@ async function executarAutomacao() {
           // 2. Menu Fazenda e Alimentação
           try {
             console.log('Indo para Fazenda...')
-            await page.getByText('fazenda').click()
+            await page
+              .getByText(/fazenda|granja|farm/i)
+              .first()
+              .click()
             await page.waitForTimeout(3000)
 
             console.log('Clicando em Alimentação (1)...')
             await page
-              .getByRole('button', { name: 'Alimentação' })
+              .getByRole('button', {
+                name: /Alimentação|Alimentacion|Alimentación|Feed|Feeding/i
+              })
               .first()
               .click()
             await page.waitForTimeout(3000)
 
             console.log('Clicando em Alimentação (2)...')
             await page
-              .getByRole('button', { name: 'Alimentação' })
+              .getByRole('button', {
+                name: /Alimentação|Alimentacion|Alimentación|Feed|Feeding/i
+              })
               .first()
               .click()
             await page.waitForTimeout(3000)
 
             console.log('Confirmando ação de alimentação...')
-            await page.getByRole('button', { name: 'confirme' }).click()
+            await page
+              .getByRole('button', {
+                name: /confirme|confirmar|confirm|aceptar/i
+              })
+              .click()
             await page.waitForTimeout(2000)
 
             contadorTarefas++
@@ -901,12 +925,18 @@ async function executarAutomacao() {
             await page.waitForTimeout(3000)
 
             console.log('Acessando área de Check-in...')
-            await page.getByRole('button', { name: 'Faça login' }).click()
+            await page
+              .getByRole('button', {
+                name: /Faça login|Check-in|Login|Iniciar sesión/i
+              })
+              .click()
             await page.waitForTimeout(3000)
 
             console.log('Realizando Check-in...')
             await page
-              .getByRole('button', { name: 'Clique para fazer login' })
+              .getByRole('button', {
+                name: /Clique para fazer login|Click to log in|Haga clic|Check-in/i
+              })
               .click()
             await page.waitForTimeout(3000)
             contadorTarefas++
