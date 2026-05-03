@@ -13,19 +13,45 @@ function parseBalance(val) {
   return isNaN(n) ? 0 : n;
 }
 
-function AccountModal({ account, ledger, onClose, onAdd, onDelete }) {
+function AccountModal({ account, ledger, runData, saquesData, onClose, onAdd, onDelete, onDeleteAuto }) {
   const [tab, setTab] = useState(0);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const entries = ledger.filter(e => e.account_name === account && e.type === (tab === 0 ? 'balance' : 'withdrawal'));
+  const excludedBalIds = new Set(
+    ledger.filter(e => e.account_name === account && e.type === 'exclude_balance').map(e => e.note)
+  );
+  const excludedSaqKeys = new Set(
+    ledger.filter(e => e.account_name === account && e.type === 'exclude_saque').map(e => e.note)
+  );
+
+  const balanceEntries = [
+    ...runData.filter(r => !excludedBalIds.has(r.id))
+      .map(r => ({ id: r.id, kind: 'auto', date: r.executed_at, amount: parseBalance(r.balance), note: 'Capturado pelo robô' })),
+    ...ledger.filter(e => e.account_name === account && e.type === 'balance')
+      .map(e => ({ id: e.id, kind: 'manual', date: e.date, amount: Number(e.amount), note: e.note || 'Ajuste manual' })),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const withdrawalEntries = [
+    ...saquesData.filter(s => !excludedSaqKeys.has(s.date))
+      .map(s => ({ id: s.date, kind: 'auto', date: s.date, amount: s.saque, note: `De R$ ${s.anterior.toFixed(2)} → R$ ${s.atual.toFixed(2)}` })),
+    ...ledger.filter(e => e.account_name === account && e.type === 'withdrawal')
+      .map(e => ({ id: e.id, kind: 'manual', date: e.date, amount: Number(e.amount), note: e.note || 'Saque manual' })),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const entries = tab === 0 ? balanceEntries : withdrawalEntries;
 
   async function handleAdd() {
     if (!amount || isNaN(parseFloat(amount))) return;
     setSaving(true);
     await onAdd(account, tab === 0 ? 'balance' : 'withdrawal', parseFloat(amount), note);
     setAmount(''); setNote(''); setSaving(false);
+  }
+
+  function handleDelete(entry) {
+    if (entry.kind === 'manual') onDelete(entry.id);
+    else onDeleteAuto(account, entry.id, tab === 0 ? 'balance' : 'saque');
   }
 
   return (
@@ -36,8 +62,12 @@ function AccountModal({ account, ledger, onClose, onAdd, onDelete }) {
           <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={18} /></button>
         </div>
         <div className="flex border-b border-gray-800 shrink-0">
-          <button onClick={() => setTab(0)} className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 0 ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-gray-500 hover:text-gray-300'}`}>Saldo Atual</button>
-          <button onClick={() => setTab(1)} className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 1 ? 'text-red-400 border-b-2 border-red-400' : 'text-gray-500 hover:text-gray-300'}`}>Saques</button>
+          <button onClick={() => setTab(0)} className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 0 ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-gray-500 hover:text-gray-300'}`}>
+            Saldo Atual <span className="text-xs ml-1 opacity-50">({balanceEntries.length})</span>
+          </button>
+          <button onClick={() => setTab(1)} className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 1 ? 'text-red-400 border-b-2 border-red-400' : 'text-gray-500 hover:text-gray-300'}`}>
+            Saques <span className="text-xs ml-1 opacity-50">({withdrawalEntries.length})</span>
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto min-h-0">
           {entries.length === 0 ? (
@@ -48,18 +78,22 @@ function AccountModal({ account, ledger, onClose, onAdd, onDelete }) {
                 <tr>
                   <th className="px-4 py-2 text-left text-gray-400 font-medium text-xs">Data</th>
                   <th className="px-4 py-2 text-left text-gray-400 font-medium text-xs">Valor</th>
-                  <th className="px-4 py-2 text-left text-gray-400 font-medium text-xs">Obs</th>
+                  <th className="px-4 py-2 text-left text-gray-400 font-medium text-xs">Origem / Obs</th>
                   <th className="px-4 py-2 w-8"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {entries.map(e => (
-                  <tr key={e.id} className="hover:bg-gray-800/40">
+                {entries.map((e, idx) => (
+                  <tr key={`${e.id}-${idx}`} className="hover:bg-gray-800/40">
                     <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{new Date(e.date).toLocaleDateString('pt-BR')}</td>
-                    <td className={`px-4 py-2.5 font-medium text-sm ${tab === 0 ? 'text-green-400' : 'text-red-400'}`}>R$ {Number(e.amount).toFixed(2)}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs">{e.note || '—'}</td>
+                    <td className={`px-4 py-2.5 font-medium text-sm ${tab === 0 ? 'text-green-400' : 'text-red-400'}`}>R$ {e.amount.toFixed(2)}</td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {e.kind === 'auto'
+                        ? <span className="text-indigo-400/70">{e.note}</span>
+                        : <span className="text-gray-500">{e.note}</span>}
+                    </td>
                     <td className="px-4 py-2.5">
-                      <button onClick={() => onDelete(e.id)} className="text-gray-600 hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
+                      <button onClick={() => handleDelete(e)} className="text-gray-600 hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
                     </td>
                   </tr>
                 ))}
@@ -94,7 +128,7 @@ export default function Financeiro() {
       since.setDate(since.getDate() - 30);
       const { data } = await supabase
         .from('account_run_results')
-        .select('account_name, balance, platform, tasks_completed, status, executed_at')
+        .select('id, account_name, balance, platform, tasks_completed, status, executed_at')
         .gte('executed_at', since.toISOString())
         .order('executed_at', { ascending: true });
       if (data) setAllData(data);
@@ -189,19 +223,25 @@ export default function Financeiro() {
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [saques]);
 
-  // Resumo por conta: Saldo Atual, Saques no Mês, Saques Totais
+  // Resumo por conta: Saldo Atual, Saques no Mês, Saques Totais (respeita exclusões)
   const accountSummaries = useMemo(() => {
     const accs = [...new Set(allData.map(r => r.account_name))];
     const now = new Date();
     const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     return accs.map((acc, i) => {
-      const runs = allData.filter(r => r.account_name === acc && r.balance != null);
+      const excludedBalIds = new Set(
+        ledger.filter(e => e.account_name === acc && e.type === 'exclude_balance').map(e => e.note)
+      );
+      const excludedSaqKeys = new Set(
+        ledger.filter(e => e.account_name === acc && e.type === 'exclude_saque').map(e => e.note)
+      );
+      const runs = allData.filter(r => r.account_name === acc && r.balance != null && !excludedBalIds.has(r.id));
       runs.sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at));
       const latestBal = runs.length > 0 ? parseBalance(runs[0].balance) : 0;
       const balAdj = ledger.filter(e => e.account_name === acc && e.type === 'balance')
         .reduce((s, e) => s + Number(e.amount), 0);
       const saldoAtual = latestBal + balAdj;
-      const accSaques = saques.filter(s => s.account === acc);
+      const accSaques = saques.filter(s => s.account === acc && !excludedSaqKeys.has(s.date));
       const autoTotal = accSaques.reduce((s, e) => s + e.saque, 0);
       const autoMes = accSaques.filter(s => (s.date || '').slice(0, 7) === mesAtual)
         .reduce((s, e) => s + e.saque, 0);
@@ -211,7 +251,7 @@ export default function Financeiro() {
         .reduce((s, e) => s + Number(e.amount), 0);
       return {
         account: acc,
-        platform: runs[0]?.platform,
+        platform: runs[0]?.platform || allData.find(r => r.account_name === acc)?.platform,
         saldoAtual,
         saquesMes: autoMes + manMes,
         saquesTotal: autoTotal + manTotal,
@@ -232,6 +272,14 @@ export default function Financeiro() {
     setLedger(prev => prev.filter(e => e.id !== id));
   }
 
+  async function addLedgerExclusion(account, sourceId, sourceType) {
+    const type = sourceType === 'balance' ? 'exclude_balance' : 'exclude_saque';
+    const { data } = await supabase.from('financial_ledger').insert({
+      account_name: account, type, amount: 0, note: sourceId, date: new Date().toISOString()
+    }).select().single();
+    if (data) setLedger(prev => [data, ...prev]);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -246,9 +294,12 @@ export default function Financeiro() {
         <AccountModal
           account={modalAccount}
           ledger={ledger}
+          runData={allData.filter(r => r.account_name === modalAccount && r.balance != null)}
+          saquesData={saques.filter(s => s.account === modalAccount)}
           onClose={() => setModalAccount(null)}
           onAdd={addLedgerEntry}
           onDelete={deleteLedgerEntry}
+          onDeleteAuto={addLedgerExclusion}
         />
       )}
 
