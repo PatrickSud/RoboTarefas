@@ -1,4 +1,9 @@
 import { EC2Client, StartInstancesCommand } from '@aws-sdk/client-ec2'
+import {
+  SchedulerClient,
+  GetScheduleCommand,
+  UpdateScheduleCommand
+} from '@aws-sdk/client-scheduler'
 
 function getRequiredEnv() {
   const required = [
@@ -151,6 +156,92 @@ export default async function handler(req, res) {
       } catch {
         res.status(200).json({ ok: false, logs: '' })
       }
+      return
+    }
+
+    if (action === 'get-schedule') {
+      const scheduler = new SchedulerClient({
+        region: env.region,
+        credentials: {
+          accessKeyId: env.accessKeyId,
+          secretAccessKey: env.secretAccessKey
+        }
+      })
+
+      const scheduleName =
+        process.env.EVENTBRIDGE_SCHEDULE_NAME || 'Ligar-Robo-Tarefas'
+      const scheduleGroup = process.env.EVENTBRIDGE_SCHEDULE_GROUP || 'default'
+
+      const schedule = await scheduler.send(
+        new GetScheduleCommand({
+          Name: scheduleName,
+          GroupName: scheduleGroup
+        })
+      )
+
+      const cronExpr = schedule.ScheduleExpression || ''
+      const cronMatch = cronExpr.match(/cron\((\d+)\s+(\d+)/)
+      const hour = cronMatch ? parseInt(cronMatch[2]) : null
+      const minute = cronMatch ? parseInt(cronMatch[1]) : 0
+      const enabled = schedule.State === 'ENABLED'
+
+      res.status(200).json({
+        ok: true,
+        enabled,
+        hour,
+        minute,
+        expression: cronExpr,
+        timezone: schedule.ScheduleExpressionTimezone || ''
+      })
+      return
+    }
+
+    if (action === 'update-schedule') {
+      const { enabled: newEnabled, hour: newHour } = parseBody(req)
+
+      const scheduler = new SchedulerClient({
+        region: env.region,
+        credentials: {
+          accessKeyId: env.accessKeyId,
+          secretAccessKey: env.secretAccessKey
+        }
+      })
+
+      const scheduleName =
+        process.env.EVENTBRIDGE_SCHEDULE_NAME || 'Ligar-Robo-Tarefas'
+      const scheduleGroup = process.env.EVENTBRIDGE_SCHEDULE_GROUP || 'default'
+
+      const current = await scheduler.send(
+        new GetScheduleCommand({
+          Name: scheduleName,
+          GroupName: scheduleGroup
+        })
+      )
+
+      const updateParams = {
+        Name: scheduleName,
+        GroupName: scheduleGroup,
+        FlexibleTimeWindow: current.FlexibleTimeWindow,
+        Target: current.Target,
+        ScheduleExpressionTimezone:
+          current.ScheduleExpressionTimezone || 'America/Sao_Paulo',
+        ScheduleExpression: current.ScheduleExpression,
+        State: current.State
+      }
+
+      if (newEnabled !== undefined) {
+        updateParams.State = newEnabled ? 'ENABLED' : 'DISABLED'
+      }
+
+      if (newHour !== undefined && newHour !== null) {
+        const tz = current.ScheduleExpressionTimezone || 'America/Sao_Paulo'
+        updateParams.ScheduleExpression = `cron(0 ${newHour} * * ? *)`
+        updateParams.ScheduleExpressionTimezone = tz
+      }
+
+      await scheduler.send(new UpdateScheduleCommand(updateParams))
+
+      res.status(200).json({ ok: true, message: 'Agendamento atualizado.' })
       return
     }
 
