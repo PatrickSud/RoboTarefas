@@ -200,7 +200,7 @@ export default function Saldos() {
   const selectedHistory = useMemo(() => (
     dedupeBalanceHistory(results.filter(result => resultMatchesSummary(result, modalSummary)))
       .sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at))
-  ), [results, modalAccount, modalSummary]);
+  ), [results, modalSummary]);
 
   const withdrawalsByAccount = useMemo(() => {
     const map = new Map();
@@ -383,6 +383,75 @@ export default function Saldos() {
         </section>
       </div>
 
+      <section className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-800 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <ArrowDownCircle size={18} className="text-red-400" />
+            <div>
+              <h3 className="font-semibold text-white">Saques</h3>
+              <p className="text-xs text-gray-500">Reduções de saldo detectadas automaticamente por conta.</p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+              <p className="text-xs text-red-300">Saques consolidados selecionados</p>
+              <p className="text-2xl font-bold text-white mt-1">{formatCurrency(consolidatedWithdrawalsTotal)}</p>
+              <p className="text-xs text-gray-500 mt-1">{selectedForWithdrawals.size} de {withdrawalSummaries.length} conta(s)</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={selectAllWithdrawals} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Selecionar todas</button>
+              <button onClick={clearWithdrawalSelection} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Limpar</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="divide-y divide-gray-800">
+          {withdrawalSummaries.length === 0 ? (
+            <div className="p-8 text-center text-gray-600 text-sm">
+              <ArrowDownCircle size={28} className="mx-auto mb-2 opacity-30" />
+              <p>Nenhum saque detectado pelo histórico de saldos.</p>
+            </div>
+          ) : withdrawalSummaries.map(account => {
+            const checked = selectedForWithdrawals.has(account.key);
+            return (
+              <button
+                key={account.key}
+                onClick={() => setWithdrawalModalAccount(account.key)}
+                className="w-full text-left p-4 transition-colors hover:bg-gray-800/40"
+              >
+                <div className="flex items-center gap-4">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={event => { event.stopPropagation(); toggleWithdrawalAccount(account.key); }}
+                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); toggleWithdrawalAccount(account.key); } }}
+                    className={`shrink-0 rounded-full transition-colors ${checked ? 'text-red-400' : 'text-gray-600 hover:text-gray-300'}`}
+                    title={checked ? 'Remover do consolidado de saques' : 'Adicionar ao consolidado de saques'}
+                  >
+                    {checked ? <CheckCircle2 size={22} /> : <Circle size={22} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-100 truncate">{account.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                      </div>
+                      <div className="sm:text-right">
+                        <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalTotal)}</p>
+                        <p className="text-xs text-gray-500">
+                          {account.withdrawalCount} saque(s)
+                          {account.latestWithdrawal ? ` • último em ${formatDate(account.latestWithdrawal.date)}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {modalAccount && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setModalAccount(null)}>
           <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
@@ -441,6 +510,72 @@ export default function Saldos() {
                             title="Excluir linha do histórico"
                           >
                             {deletingId === row.id ? <X size={15} /> : <Trash2 size={15} />}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {withdrawalModalAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setWithdrawalModalAccount(null)}>
+          <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <ArrowDownCircle size={18} className="text-red-400 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-white truncate">Histórico de saques</h3>
+                  <p className="text-xs text-gray-500 truncate">
+                    {withdrawalModalSummary?.name || withdrawalModalAccount}
+                    {withdrawalModalSummary?.platform ? ` • ${withdrawalModalSummary.platform}` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-xs text-gray-500">{selectedWithdrawalHistory.length} saque(s)</span>
+                <button onClick={() => setWithdrawalModalAccount(null)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {selectedWithdrawalHistory.length === 0 ? (
+              <div className="p-8 text-center text-gray-600 text-sm">
+                <Clock size={28} className="mx-auto mb-2 opacity-30" />
+                <p>Nenhum saque detectado para esta conta.</p>
+              </div>
+            ) : (
+              <div className="overflow-auto">
+                <table className="w-full text-sm min-w-[680px]">
+                  <thead className="bg-gray-800/50 text-left sticky top-0">
+                    <tr>
+                      <th className="px-5 py-3 font-medium text-gray-400">Data</th>
+                      <th className="px-5 py-3 font-medium text-gray-400">Saldo anterior</th>
+                      <th className="px-5 py-3 font-medium text-gray-400">Saldo atual</th>
+                      <th className="px-5 py-3 font-medium text-gray-400">Saque</th>
+                      <th className="px-5 py-3 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {selectedWithdrawalHistory.map(withdrawal => (
+                      <tr key={withdrawal.id} className="hover:bg-gray-800/40">
+                        <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(withdrawal.date)}</td>
+                        <td className="px-5 py-3 text-gray-400">{formatCurrency(withdrawal.previousBalance)}</td>
+                        <td className="px-5 py-3 text-gray-400">{formatCurrency(withdrawal.currentBalance)}</td>
+                        <td className="px-5 py-3 font-semibold text-red-400">-{formatCurrency(withdrawal.amount)}</td>
+                        <td className="px-5 py-3 text-right">
+                          <button
+                            onClick={() => deleteHistoryRow(withdrawal.row)}
+                            disabled={deletingId === withdrawal.id}
+                            className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+                            title="Excluir linha que gerou este saque"
+                          >
+                            {deletingId === withdrawal.id ? <X size={15} /> : <Trash2 size={15} />}
                           </button>
                         </td>
                       </tr>
