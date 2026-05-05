@@ -362,7 +362,7 @@ function AccountForm({ account, onClose, onSaved }) {
     else alert('Erro ao salvar: ' + error.message);
   }
 
-  const HOURS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+  const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
   function toggleSchedule(hour) {
     setForm(prev => {
