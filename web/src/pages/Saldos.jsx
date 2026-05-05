@@ -5,6 +5,7 @@ import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Settings, Trash2
 const SELECTION_STORAGE_KEY = 'saldos_selected_accounts';
 const WITHDRAWAL_SELECTION_STORAGE_KEY = 'saldos_selected_withdrawal_accounts';
 const WITHDRAWAL_FEES_STORAGE_KEY = 'saldos_withdrawal_fees';
+const COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6', '#60a5fa', '#a78bfa', '#facc15'];
 
 function parseBalance(value) {
   const normalized = String(value ?? '0')
@@ -51,6 +52,10 @@ function loadSavedSelection(storageKey) {
   } catch {
     return null;
   }
+}
+
+function platformKey(platform) {
+  return normalizeKey(platform || 'Sem plataforma');
 }
 
 export default function Saldos() {
@@ -179,6 +184,19 @@ export default function Saldos() {
       selectedForTotal.has(account.key) ? sum + account.balanceValue : sum
     ), 0)
   ), [summaries, selectedForTotal]);
+
+  const platformColors = useMemo(() => {
+    const colors = new Map();
+    for (const account of summaries) {
+      const key = platformKey(account.platform);
+      if (!colors.has(key)) colors.set(key, COLORS[colors.size % COLORS.length]);
+    }
+    return colors;
+  }, [summaries]);
+
+  function getPlatformColor(platform) {
+    return platformColors.get(platformKey(platform)) || COLORS[0];
+  }
 
   const modalSummary = useMemo(() => (
     summaries.find(account => account.key === modalAccount) || null
@@ -365,181 +383,170 @@ export default function Saldos() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-        <div>
-          <h2 className="text-xl md:text-2xl font-bold text-white">Saldos</h2>
-          <p className="text-sm text-gray-500 mt-1">Saldo atual capturado pelo robô e histórico de movimentação por conta.</p>
+      <div className="mb-2">
+        <h2 className="text-xl md:text-2xl font-bold text-white">Saldos & Saques</h2>
+        <p className="text-sm text-gray-500 mt-1">Acompanhe as movimentações consolidadas e individuais das suas contas.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {/* Total Saldo */}
+        <div className="bg-indigo-600/10 border border-indigo-500/30 rounded-2xl px-5 py-4 flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-indigo-300 font-semibold uppercase tracking-wider">Saldo Consolidado</p>
+            <p className="text-3xl font-bold text-white mt-1">{formatCurrency(consolidatedTotal)}</p>
+          </div>
+          <div className="flex items-center justify-between mt-4 pt-2 border-t border-indigo-500/20">
+            <p className="text-xs text-indigo-200/60">{selectedForTotal.size} de {summaries.length} contas ativas</p>
+            <div className="flex gap-3">
+              <button onClick={selectAll} className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors">Todas</button>
+              <button onClick={clearSelection} className="text-xs font-medium text-gray-400 hover:text-gray-300 transition-colors">Nenhuma</button>
+            </div>
+          </div>
         </div>
-        <div className="bg-indigo-600/10 border border-indigo-500/30 rounded-2xl px-5 py-4 min-w-64">
-          <p className="text-xs text-indigo-300">Saldo consolidado selecionado</p>
-          <p className="text-3xl font-bold text-white mt-1">{formatCurrency(consolidatedTotal)}</p>
-          <p className="text-xs text-gray-500 mt-1">{selectedForTotal.size} de {summaries.length} conta(s)</p>
+
+        {/* Total Saques */}
+        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-5 py-4 flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-red-300 font-semibold uppercase tracking-wider">Saques Consolidados (Líquido)</p>
+            <p className="text-3xl font-bold text-white mt-1">{formatCurrency(consolidatedWithdrawalsNet)}</p>
+          </div>
+          <div className="flex items-center justify-between mt-4 pt-2 border-t border-red-500/20">
+            <p className="text-xs text-red-200/60">
+              Bruto {formatCurrency(consolidatedWithdrawalsTotal)} • {selectedForWithdrawals.size} de {withdrawalSummaries.length}
+            </p>
+            <div className="flex gap-3">
+              <button onClick={selectAllWithdrawals} className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors">Todas</button>
+              <button onClick={clearWithdrawalSelection} className="text-xs font-medium text-gray-400 hover:text-gray-300 transition-colors">Nenhuma</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        <section className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Wallet size={18} className="text-indigo-400" />
-              <div>
-                <h3 className="font-semibold text-white">Contas e saldo atual</h3>
-                <p className="text-xs text-gray-500">Marque as contas que entram no consolidado.</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {summaries.map(account => {
+          const checkedTotal = selectedForTotal.has(account.key);
+          const platformColor = getPlatformColor(account.platform);
+          const ws = withdrawalSummaries.find(w => w.key === account.key);
+          const hasWithdrawals = !!ws;
+          const checkedWithdrawal = hasWithdrawals && selectedForWithdrawals.has(account.key);
+          const isEditingFee = editingFeeFor === account.key;
+
+          return (
+            <div key={account.key} className="bg-gray-900 rounded-2xl border border-gray-800 flex flex-col overflow-visible hover:border-gray-700 transition-colors relative">
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-gray-800 flex justify-between items-start rounded-t-2xl" style={{ borderTop: `3px solid ${platformColor}` }}>
+                <div className="min-w-0 pr-2">
+                  <h3 className="font-semibold text-gray-100 truncate" title={account.name}>{account.name}</h3>
+                  <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => setModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saldos">
+                    <History size={16} />
+                  </button>
+                  {hasWithdrawals && (
+                    <button onClick={() => setWithdrawalModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saques">
+                      <ArrowDownCircle size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={selectAll} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-indigo-500 hover:text-indigo-300 transition-colors">Selecionar todas</button>
-              <button onClick={clearSelection} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Limpar</button>
-            </div>
-          </div>
 
-          <div className="divide-y divide-gray-800">
-            {summaries.length === 0 ? (
-              <div className="p-8 text-center text-gray-600 text-sm">Nenhum saldo capturado ainda.</div>
-            ) : summaries.map(account => {
-              const checked = selectedForTotal.has(account.key);
-              return (
-                <button
-                  key={account.key}
-                  onClick={() => setModalAccount(account.key)}
-                  className="w-full text-left p-4 transition-colors hover:bg-gray-800/40"
+              {/* Body */}
+              <div className="p-4 flex-1 flex flex-col gap-3">
+                {/* Saldo Block */}
+                <div 
+                  className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors ${checkedTotal ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
+                  onClick={() => toggleAccount(account.key)}
                 >
-                  <div className="flex items-center gap-4">
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={event => { event.stopPropagation(); toggleAccount(account.key); }}
-                      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); toggleAccount(account.key); } }}
-                      className={`shrink-0 rounded-full transition-colors ${checked ? 'text-indigo-400' : 'text-gray-600 hover:text-gray-300'}`}
-                      title={checked ? 'Remover do consolidado' : 'Adicionar ao consolidado'}
-                    >
-                      {checked ? <CheckCircle2 size={22} /> : <Circle size={22} />}
+                  <div className="flex items-center gap-3">
+                    <span className={checkedTotal ? 'text-indigo-400' : 'text-gray-600'}>
+                      {checkedTotal ? <CheckCircle2 size={20} /> : <Circle size={20} />}
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-gray-100 truncate">{account.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
-                        </div>
-                        <div className="sm:text-right">
-                          <p className="text-lg font-bold text-white">{formatCurrency(account.balanceValue)}</p>
-                          <p className="text-xs text-gray-500">{formatDate(account.latest?.executed_at)}</p>
-                        </div>
-                      </div>
+                    <div>
+                      <p className="text-[11px] font-medium text-gray-400 mb-0.5 uppercase tracking-wide">Saldo Atual</p>
+                      <p className="text-lg font-bold text-white leading-none">{formatCurrency(account.balanceValue)}</p>
                     </div>
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </div>
+                  <div className="text-right">
+                    <p className="text-[10px] text-gray-400">{formatDate(account.latest?.executed_at).split(' ')[0]}</p>
+                    <p className="text-[10px] text-gray-600">{formatDate(account.latest?.executed_at).split(' ')[1] || ''}</p>
+                  </div>
+                </div>
 
-      <section className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-800 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <ArrowDownCircle size={18} className="text-red-400" />
-            <div>
-              <h3 className="font-semibold text-white">Saques</h3>
-              <p className="text-xs text-gray-500">Reduções de saldo detectadas automaticamente por conta.</p>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
-              <p className="text-xs text-red-300">Saques consolidados selecionados</p>
-              <p className="text-2xl font-bold text-white mt-1">{formatCurrency(consolidatedWithdrawalsNet)}</p>
-              <p className="text-xs text-gray-500 mt-1">
-                Bruto {formatCurrency(consolidatedWithdrawalsTotal)}
-                {' • '}{selectedForWithdrawals.size} de {withdrawalSummaries.length} conta(s)
-              </p>
-            </div>
-            <div className="flex gap-2 mt-2 sm:mt-0">
-              <button onClick={selectAllWithdrawals} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Selecionar todas</button>
-              <button onClick={clearWithdrawalSelection} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Limpar</button>
-            </div>
-          </div>
-        </div>
-
-        <div className="divide-y divide-gray-800">
-          {withdrawalSummaries.length === 0 ? (
-            <div className="p-8 text-center text-gray-600 text-sm">
-              <ArrowDownCircle size={28} className="mx-auto mb-2 opacity-30" />
-              <p>Nenhum saque detectado pelo histórico de saldos.</p>
-            </div>
-          ) : withdrawalSummaries.map(account => {
-            const checked = selectedForWithdrawals.has(account.key);
-            const isEditingFee = editingFeeFor === account.key;
-            return (
-              <div key={account.key} className="relative">
-                <button
-                  onClick={() => setWithdrawalModalAccount(account.key)}
-                  className="w-full text-left p-4 pr-12 transition-colors hover:bg-gray-800/40"
-                >
-                  <div className="flex items-center gap-4">
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={event => { event.stopPropagation(); toggleWithdrawalAccount(account.key); }}
-                      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); toggleWithdrawalAccount(account.key); } }}
-                      className={`shrink-0 rounded-full transition-colors ${checked ? 'text-red-400' : 'text-gray-600 hover:text-gray-300'}`}
-                      title={checked ? 'Remover do consolidado de saques' : 'Adicionar ao consolidado de saques'}
+                {/* Saques Block */}
+                {hasWithdrawals ? (
+                  <div className="relative">
+                    <div 
+                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors ${checkedWithdrawal ? 'bg-red-500/10 border-red-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
+                      onClick={() => toggleWithdrawalAccount(account.key)}
                     >
-                      {checked ? <CheckCircle2 size={22} /> : <Circle size={22} />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-gray-100 truncate">{account.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
-                        </div>
-                        <div className="sm:text-right">
-                          <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalNet)}</p>
-                          <p className="text-xs text-gray-500">
-                            Bruto -{formatCurrency(account.withdrawalTotal)}
-                            {account.withdrawalFee > 0 ? ` (${account.withdrawalFee}% taxa)` : ''}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5">
-                            {account.withdrawalCount} saque(s)
-                            {account.latestWithdrawal ? ` • último em ${formatDate(account.latestWithdrawal.date)}` : ''}
-                          </p>
+                      <div className="flex items-center gap-3">
+                        <span className={checkedWithdrawal ? 'text-red-400' : 'text-gray-600'}>
+                          {checkedWithdrawal ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                        </span>
+                        <div>
+                          <p className="text-[11px] font-medium text-gray-400 mb-0.5 uppercase tracking-wide">Saques ({ws.withdrawalCount})</p>
+                          <p className="text-lg font-bold text-red-400 leading-none">-{formatCurrency(ws.withdrawalNet)}</p>
                         </div>
                       </div>
+                      <div className="text-right flex flex-col items-end gap-1">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
+                          className={`p-1 rounded-md transition-colors ${ws.withdrawalFee > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
+                          title="Configurar Taxa"
+                        >
+                          <Settings size={14} />
+                        </button>
+                        <p className="text-[10px] text-gray-500 mt-1">Bruto -{formatCurrency(ws.withdrawalTotal)}</p>
+                      </div>
                     </div>
+                    {isEditingFee && (
+                      <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-gray-800 border border-gray-700 rounded-xl z-10 shadow-xl flex items-center justify-between">
+                        <label className="text-xs text-gray-300 font-medium">Taxa (%)</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            defaultValue={ws.withdrawalFee}
+                            onKeyDown={event => { if (event.key === 'Enter') saveFee(account.key, event.currentTarget.value); if (event.key === 'Escape') setEditingFeeFor(null); }}
+                            className="w-16 px-2 py-1 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-red-500 focus:outline-none"
+                            autoFocus
+                          />
+                          <button 
+                            onClick={(e) => {
+                              const val = e.currentTarget.previousElementSibling.value;
+                              saveFee(account.key, val);
+                            }}
+                            className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-medium transition-colors"
+                          >
+                            Salvar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </button>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={event => { event.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
-                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); } }}
-                  className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-600 hover:text-gray-300 hover:bg-gray-800 transition-colors"
-                  title="Configurar taxa de saque"
-                >
-                  <Settings size={16} />
-                </span>
-                {isEditingFee && (
-                  <div className="px-4 pb-4 flex items-center gap-2" onClick={event => event.stopPropagation()}>
-                    <label className="text-xs text-gray-400 shrink-0">Taxa %:</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      defaultValue={account.withdrawalFee}
-                      onKeyDown={event => { if (event.key === 'Enter') saveFee(account.key, event.currentTarget.value); if (event.key === 'Escape') setEditingFeeFor(null); }}
-                      className="w-20 px-2 py-1 text-sm bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-red-500 focus:outline-none"
-                      autoFocus
-                    />
+                ) : (
+                  <div className="flex-1 border border-dashed border-gray-800 rounded-xl flex items-center justify-center p-3">
+                    <p className="text-[11px] text-gray-600">Nenhum saque detectado</p>
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
-      </section>
+            </div>
+          );
+        })}
+        {summaries.length === 0 && (
+          <div className="col-span-full p-12 text-center border border-dashed border-gray-800 rounded-2xl">
+            <Wallet size={32} className="mx-auto text-gray-600 mb-3" />
+            <p className="text-gray-400">Nenhum saldo ou conta cadastrada.</p>
+          </div>
+        )}
+      </div>
 
+      {/* Modal Historico de Saldo */}
       {modalAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setModalAccount(null)}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setModalAccount(null)}>
           <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
@@ -568,7 +575,7 @@ export default function Saldos() {
             ) : (
               <div className="overflow-auto">
                 <table className="w-full text-sm min-w-[560px]">
-                  <thead className="bg-gray-800/50 text-left sticky top-0">
+                  <thead className="bg-gray-800/50 text-left sticky top-0 z-10">
                     <tr>
                       <th className="px-5 py-3 font-medium text-gray-400">Data</th>
                       <th className="px-5 py-3 font-medium text-gray-400">Saldo</th>
@@ -608,8 +615,9 @@ export default function Saldos() {
         </div>
       )}
 
+      {/* Modal Historico de Saques */}
       {withdrawalModalAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setWithdrawalModalAccount(null)}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setWithdrawalModalAccount(null)}>
           <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
@@ -638,7 +646,7 @@ export default function Saldos() {
             ) : (
               <div className="overflow-auto">
                 <table className="w-full text-sm min-w-[680px]">
-                  <thead className="bg-gray-800/50 text-left sticky top-0">
+                  <thead className="bg-gray-800/50 text-left sticky top-0 z-10">
                     <tr>
                       <th className="px-5 py-3 font-medium text-gray-400">Data</th>
                       <th className="px-5 py-3 font-medium text-gray-400">Saldo anterior</th>
