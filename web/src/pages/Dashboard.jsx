@@ -91,7 +91,9 @@ export default function Dashboard() {
   async function checkAwsStatus() {
     try {
       const res = await fetch('/api/run-robot', {
-        method: 'POST', body: JSON.stringify({ action: 'health' }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'health' }),
       });
       const data = await parseApiResponse(res);
       if (!res.ok && data.message) setRunMessage(data.message);
@@ -103,7 +105,9 @@ export default function Dashboard() {
     if (!livePolling) setLogsLoading(true);
     try {
       const res = await fetch('/api/run-robot', {
-        method: 'POST', body: JSON.stringify({ action: 'logs' }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logs' }),
       });
       const data = await parseApiResponse(res);
       if (!res.ok && data.message) setRunMessage(data.message);
@@ -156,6 +160,7 @@ export default function Dashboard() {
     const callFunction = async (action) => {
       const res = await fetch('/api/run-robot', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, autoShutdown }),
       });
       const data = await parseApiResponse(res);

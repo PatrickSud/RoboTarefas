@@ -28,13 +28,24 @@ function getRequiredEnv() {
   }
 }
 
+function parseBody(req) {
+  if (!req.body) return {}
+  if (typeof req.body === 'object') return req.body
+
+  try {
+    return JSON.parse(req.body)
+  } catch {
+    return {}
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, message: 'Método não permitido.' })
     return
   }
 
-  const { action, autoShutdown } = req.body || {}
+  const { action, autoShutdown } = parseBody(req)
   const env = getRequiredEnv()
 
   if (!env.ok) {
