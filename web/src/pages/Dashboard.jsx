@@ -165,7 +165,7 @@ export default function Dashboard() {
     }
 
     refreshLive();
-    const interval = setInterval(refreshLive, 10000);
+    const interval = setInterval(refreshLive, 20000);
 
     return () => {
       cancelled = true;

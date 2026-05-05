@@ -9,6 +9,10 @@ const configuracaoEmail = {
 }
 const numeroAdminWhatsApp = process.env.WHATSAPP_ADMIN_ID
 const healthcheckUrl = process.env.HEALTHCHECK_URL
+const whatsappReadyTimeoutMs = Number(
+  process.env.WHATSAPP_READY_TIMEOUT_MS || 60000
+)
+let automacaoIniciada = false
 
 const { chromium } = require('playwright')
 const nodemailer = require('nodemailer')
@@ -87,12 +91,25 @@ client.on('qr', async qr => {
   }
 })
 
+function iniciarAutomacao(motivo) {
+  if (automacaoIniciada) return
+  automacaoIniciada = true
+  console.log(`Iniciando automação (${motivo})...`)
+  executarAutomacao()
+}
+
 client.on('ready', () => {
   console.log('Cliente WhatsApp está pronto!')
-  executarAutomacao()
+  iniciarAutomacao('WhatsApp pronto')
 })
 
 client.initialize()
+
+setTimeout(() => {
+  iniciarAutomacao(
+    `timeout de ${Math.round(whatsappReadyTimeoutMs / 1000)}s aguardando WhatsApp`
+  )
+}, whatsappReadyTimeoutMs)
 
 function chamarGoogleAI(payload) {
   return new Promise((resolve, reject) => {
