@@ -146,7 +146,15 @@ export default function Saldos() {
       }
     }
 
-    return merged;
+    return merged.sort((a, b) => {
+      const platA = String(a.platform || '').toLowerCase();
+      const platB = String(b.platform || '').toLowerCase();
+      if (platA < platB) return -1;
+      if (platA > platB) return 1;
+      const nameA = String(a.name || '').toLowerCase();
+      const nameB = String(b.name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }, [accounts, results]);
 
   useEffect(() => {
