@@ -22,10 +22,15 @@ function formatDate(value) {
   return new Date(value).toLocaleString('pt-BR');
 }
 
+function formatDayKey(value) {
+  if (!value) return '';
+  return new Date(value).toISOString().slice(0, 10);
+}
+
 export default function Saldos() {
   const [accounts, setAccounts] = useState([]);
   const [results, setResults] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [modalAccount, setModalAccount] = useState(null);
   const [selectedForTotal, setSelectedForTotal] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
@@ -59,8 +64,15 @@ export default function Saldos() {
       if (!latestByName.has(result.account_name)) latestByName.set(result.account_name, result);
     }
 
-    const accountNames = new Set(accounts.map(account => account.name));
-    const merged = accounts.map(account => {
+    const uniqueAccounts = [];
+    const accountNames = new Set();
+    for (const account of accounts) {
+      if (accountNames.has(account.name)) continue;
+      accountNames.add(account.name);
+      uniqueAccounts.push(account);
+    }
+
+    const merged = uniqueAccounts.map(account => {
       const latest = latestByName.get(account.name);
       return {
         key: account.name,
@@ -96,7 +108,6 @@ export default function Saldos() {
       if (prev.size > 0) return prev;
       return new Set(summaries.map(account => account.key));
     });
-    setSelectedAccount(prev => prev || summaries[0]?.key || null);
   }, [summaries]);
 
   const consolidatedTotal = useMemo(() => (
@@ -107,9 +118,15 @@ export default function Saldos() {
 
   const selectedHistory = useMemo(() => (
     results
-      .filter(result => result.account_name === selectedAccount)
+      .filter(result => result.account_name === modalAccount)
+      .filter((result, index, list) => {
+        const key = `${result.account_name}|${parseBalance(result.balance).toFixed(2)}|${formatDayKey(result.executed_at)}`;
+        return list.findIndex(item => (
+          `${item.account_name}|${parseBalance(item.balance).toFixed(2)}|${formatDayKey(item.executed_at)}` === key
+        )) === index;
+      })
       .sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at))
-  ), [results, selectedAccount]);
+  ), [results, modalAccount]);
 
   function toggleAccount(accountKey) {
     setSelectedForTotal(prev => {
@@ -164,7 +181,7 @@ export default function Saldos() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <section className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -185,12 +202,11 @@ export default function Saldos() {
               <div className="p-8 text-center text-gray-600 text-sm">Nenhum saldo capturado ainda.</div>
             ) : summaries.map(account => {
               const checked = selectedForTotal.has(account.key);
-              const active = selectedAccount === account.key;
               return (
                 <button
                   key={account.key}
-                  onClick={() => setSelectedAccount(account.key)}
-                  className={`w-full text-left p-4 transition-colors ${active ? 'bg-indigo-500/10' : 'hover:bg-gray-800/40'}`}
+                  onClick={() => setModalAccount(account.key)}
+                  className="w-full text-left p-4 transition-colors hover:bg-gray-800/40"
                 >
                   <div className="flex items-center gap-4">
                     <span
@@ -221,65 +237,74 @@ export default function Saldos() {
             })}
           </div>
         </section>
+      </div>
 
-        <section className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <History size={18} className="text-indigo-400 shrink-0" />
-              <div className="min-w-0">
-                <h3 className="font-semibold text-white truncate">Histórico da conta</h3>
-                <p className="text-xs text-gray-500 truncate">{selectedAccount || 'Selecione uma conta'}</p>
+      {modalAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setModalAccount(null)}>
+          <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <History size={18} className="text-indigo-400 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-white truncate">Histórico da conta</h3>
+                  <p className="text-xs text-gray-500 truncate">{modalAccount}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-xs text-gray-500">{selectedHistory.length} registro(s)</span>
+                <button onClick={() => setModalAccount(null)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition-colors">
+                  <X size={18} />
+                </button>
               </div>
             </div>
-            <span className="text-xs text-gray-500 shrink-0">{selectedHistory.length} registro(s)</span>
-          </div>
 
-          {selectedHistory.length === 0 ? (
-            <div className="p-8 text-center text-gray-600 text-sm">
-              <Clock size={28} className="mx-auto mb-2 opacity-30" />
-              <p>Nenhuma movimentação registrada para esta conta.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead className="bg-gray-800/50 text-left">
-                  <tr>
-                    <th className="px-5 py-3 font-medium text-gray-400">Data</th>
-                    <th className="px-5 py-3 font-medium text-gray-400">Saldo</th>
-                    <th className="px-5 py-3 font-medium text-gray-400">Status</th>
-                    <th className="px-5 py-3 font-medium text-gray-400">Tarefas</th>
-                    <th className="px-5 py-3 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {selectedHistory.map(row => (
-                    <tr key={row.id} className="hover:bg-gray-800/40">
-                      <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(row.executed_at)}</td>
-                      <td className="px-5 py-3 font-semibold text-white">{formatCurrency(parseBalance(row.balance))}</td>
-                      <td className="px-5 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${row.status === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                          {row.status === 'success' ? 'Sucesso' : 'Erro'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-gray-400">{row.tasks_completed ?? '—'}</td>
-                      <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={() => deleteHistoryRow(row)}
-                          disabled={deletingId === row.id}
-                          className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
-                          title="Excluir linha do histórico"
-                        >
-                          {deletingId === row.id ? <X size={15} /> : <Trash2 size={15} />}
-                        </button>
-                      </td>
+            {selectedHistory.length === 0 ? (
+              <div className="p-8 text-center text-gray-600 text-sm">
+                <Clock size={28} className="mx-auto mb-2 opacity-30" />
+                <p>Nenhuma movimentação registrada para esta conta.</p>
+              </div>
+            ) : (
+              <div className="overflow-auto">
+                <table className="w-full text-sm min-w-[560px]">
+                  <thead className="bg-gray-800/50 text-left sticky top-0">
+                    <tr>
+                      <th className="px-5 py-3 font-medium text-gray-400">Data</th>
+                      <th className="px-5 py-3 font-medium text-gray-400">Saldo</th>
+                      <th className="px-5 py-3 font-medium text-gray-400">Status</th>
+                      <th className="px-5 py-3 font-medium text-gray-400">Tarefas</th>
+                      <th className="px-5 py-3 w-10"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {selectedHistory.map(row => (
+                      <tr key={row.id} className="hover:bg-gray-800/40">
+                        <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(row.executed_at)}</td>
+                        <td className="px-5 py-3 font-semibold text-white">{formatCurrency(parseBalance(row.balance))}</td>
+                        <td className="px-5 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${row.status === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                            {row.status === 'success' ? 'Sucesso' : 'Erro'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-gray-400">{row.tasks_completed ?? '—'}</td>
+                        <td className="px-5 py-3 text-right">
+                          <button
+                            onClick={() => deleteHistoryRow(row)}
+                            disabled={deletingId === row.id}
+                            className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+                            title="Excluir linha do histórico"
+                          >
+                            {deletingId === row.id ? <X size={15} /> : <Trash2 size={15} />}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
