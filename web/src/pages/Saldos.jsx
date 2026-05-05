@@ -492,6 +492,11 @@ export default function Saldos() {
                   <button onClick={() => setModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saldos">
                     <History size={16} />
                   </button>
+                  {hasWithdrawals && (
+                    <button onClick={() => setWithdrawalModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saques">
+                      <ArrowDownCircle size={16} />
+                    </button>
+                  )}
                   <button 
                     onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
                     className={`p-1.5 rounded-lg transition-colors ${ws?.withdrawalFee > 0 || account.exchangeRate !== 1 ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}
@@ -499,11 +504,6 @@ export default function Saldos() {
                   >
                     <Settings size={16} />
                   </button>
-                  {hasWithdrawals && (
-                    <button onClick={() => setWithdrawalModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saques">
-                      <ArrowDownCircle size={16} />
-                    </button>
-                  )}
                 </div>
               </div>
               
