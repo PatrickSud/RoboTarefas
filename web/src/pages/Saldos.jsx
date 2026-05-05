@@ -27,6 +27,19 @@ function formatDayKey(value) {
   return new Date(value).toISOString().slice(0, 10);
 }
 
+function normalizeKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function accountKey(account) {
+  return `account:${account.id || `${normalizeKey(account.name)}|${normalizeKey(account.platform)}|${normalizeKey(account.phone)}`}`;
+}
+
+function resultKey(result) {
+  if (result.account_id) return `account:${result.account_id}`;
+  return `result:${normalizeKey(result.account_name)}|${normalizeKey(result.platform)}|${normalizeKey(result.phone)}`;
+}
+
 export default function Saldos() {
   const [accounts, setAccounts] = useState([]);
   const [results, setResults] = useState([]);
@@ -44,7 +57,7 @@ export default function Saldos() {
           .order('sort_order', { ascending: true, nullsFirst: false }),
         supabase
           .from('account_run_results')
-          .select('id,account_name,platform,phone,status,balance,tasks_completed,executed_at,error_message')
+          .select('id,account_id,account_name,platform,phone,status,balance,tasks_completed,executed_at,error_message')
           .not('balance', 'is', null)
           .order('executed_at', { ascending: false })
           .limit(1000),
@@ -59,23 +72,27 @@ export default function Saldos() {
   }, []);
 
   const summaries = useMemo(() => {
-    const latestByName = new Map();
+    const latestByKey = new Map();
     for (const result of results) {
-      if (!latestByName.has(result.account_name)) latestByName.set(result.account_name, result);
+      const key = resultKey(result);
+      if (!latestByKey.has(key)) latestByKey.set(key, result);
     }
 
     const uniqueAccounts = [];
-    const accountNames = new Set();
+    const accountKeys = new Set();
     for (const account of accounts) {
-      if (accountNames.has(account.name)) continue;
-      accountNames.add(account.name);
+      const key = accountKey(account);
+      if (accountKeys.has(key)) continue;
+      accountKeys.add(key);
       uniqueAccounts.push(account);
     }
 
     const merged = uniqueAccounts.map(account => {
-      const latest = latestByName.get(account.name);
+      const key = accountKey(account);
+      const fallbackKey = `result:${normalizeKey(account.name)}|${normalizeKey(account.platform)}|${normalizeKey(account.phone)}`;
+      const latest = latestByKey.get(key) || latestByKey.get(fallbackKey);
       return {
-        key: account.name,
+        key,
         name: account.name,
         platform: latest?.platform || account.platform,
         phone: latest?.phone || account.phone,
@@ -85,10 +102,12 @@ export default function Saldos() {
       };
     });
 
-    for (const result of latestByName.values()) {
-      if (!accountNames.has(result.account_name)) {
+    for (const result of latestByKey.values()) {
+      const key = resultKey(result);
+      const fallbackAccountKey = result.account_id ? `account:${result.account_id}` : null;
+      if (!accountKeys.has(key) && (!fallbackAccountKey || !accountKeys.has(fallbackAccountKey))) {
         merged.push({
-          key: result.account_name,
+          key,
           name: result.account_name,
           platform: result.platform,
           phone: result.phone,
@@ -116,17 +135,27 @@ export default function Saldos() {
     ), 0)
   ), [summaries, selectedForTotal]);
 
+  const modalSummary = useMemo(() => (
+    summaries.find(account => account.key === modalAccount) || null
+  ), [summaries, modalAccount]);
+
   const selectedHistory = useMemo(() => (
     results
-      .filter(result => result.account_name === modalAccount)
+      .filter(result => {
+        if (resultKey(result) === modalAccount) return true;
+        if (!modalSummary) return false;
+        return normalizeKey(result.account_name) === normalizeKey(modalSummary.name)
+          && normalizeKey(result.platform) === normalizeKey(modalSummary.platform)
+          && normalizeKey(result.phone) === normalizeKey(modalSummary.phone);
+      })
       .filter((result, index, list) => {
-        const key = `${result.account_name}|${parseBalance(result.balance).toFixed(2)}|${formatDayKey(result.executed_at)}`;
+        const key = `${resultKey(result)}|${parseBalance(result.balance).toFixed(2)}|${formatDayKey(result.executed_at)}`;
         return list.findIndex(item => (
-          `${item.account_name}|${parseBalance(item.balance).toFixed(2)}|${formatDayKey(item.executed_at)}` === key
+          `${resultKey(item)}|${parseBalance(item.balance).toFixed(2)}|${formatDayKey(item.executed_at)}` === key
         )) === index;
       })
       .sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at))
-  ), [results, modalAccount]);
+  ), [results, modalAccount, modalSummary]);
 
   function toggleAccount(accountKey) {
     setSelectedForTotal(prev => {
@@ -247,7 +276,10 @@ export default function Saldos() {
                 <History size={18} className="text-indigo-400 shrink-0" />
                 <div className="min-w-0">
                   <h3 className="font-semibold text-white truncate">Histórico da conta</h3>
-                  <p className="text-xs text-gray-500 truncate">{modalAccount}</p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {modalSummary?.name || modalAccount}
+                    {modalSummary?.platform ? ` • ${modalSummary.platform}` : ''}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
