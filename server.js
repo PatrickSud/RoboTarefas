@@ -158,11 +158,16 @@ function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true', isManua
 async function runCleanup() {
   try {
     const result = await cleanupOldPrints(retentionDays)
-    console.log(
-      `Limpeza de prints: ${result.removedCount} arquivo(s) removido(s).`
-    )
+    console.log(`Limpeza de prints: ${result.removedCount} arquivo(s) removido(s).`)
+
+    const dateLimit = new Date();
+    dateLimit.setDate(dateLimit.getDate() - retentionDays);
+    const { error: logError } = await supabase.from('system_logs').delete().lt('created_at', dateLimit.toISOString());
+    if (logError) console.error('Erro ao limpar logs antigos do Supabase:', logError.message);
+    else console.log(`Limpeza de logs antigos do Supabase concluída (retenção: ${retentionDays} dias).`);
+
   } catch (error) {
-    console.error('Falha na limpeza automática de prints:', error.message)
+    console.error('Falha na limpeza automática:', error.message)
   }
 }
 
