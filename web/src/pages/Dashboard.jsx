@@ -30,9 +30,10 @@ export default function Dashboard() {
   const logsRef = useRef(null);
 
   async function fetchLatestResults() {
-    const [{ data: configSchedule }, { data: configPrefs }] = await Promise.all([
+    const [{ data: configSchedule }, { data: configPrefs }, { data: accounts }] = await Promise.all([
       supabase.from('global_settings').select('value').eq('key', 'schedule').single(),
       supabase.from('global_settings').select('value').eq('key', 'preferences').single(),
+      supabase.from('accounts').select('id,name,platform,phone,active,sort_order').eq('active', true).order('sort_order', { ascending: true, nullsFirst: false }),
     ]);
 
     if (configSchedule) setSchedule(configSchedule.value);
@@ -42,14 +43,31 @@ export default function Dashboard() {
       .from('account_run_results')
       .select('*')
       .order('executed_at', { ascending: false })
-      .limit(50);
+      .limit(1000);
 
     if (!error && data) {
       const latestByAccount = {};
       for (const row of data) {
         if (!latestByAccount[row.account_name]) latestByAccount[row.account_name] = row;
       }
-      setResults(Object.values(latestByAccount));
+      const merged = (accounts || []).map(account => {
+        const latest = latestByAccount[account.name];
+        return latest || {
+          id: `account-${account.id}`,
+          account_id: account.id,
+          account_name: account.name,
+          platform: account.platform,
+          phone: account.phone,
+          status: 'pending',
+          tasks_completed: '-',
+          balance: '',
+          screenshot_path: '',
+          executed_at: null,
+        };
+      });
+      const accountNames = new Set((accounts || []).map(a => a.name));
+      const orphanResults = Object.values(latestByAccount).filter(row => !accountNames.has(row.account_name));
+      setResults([...merged, ...orphanResults]);
     }
     setLoading(false);
   }
@@ -141,8 +159,7 @@ export default function Dashboard() {
   async function updateSchedule(newSchedule) {
     const { error } = await supabase
       .from('global_settings')
-      .update({ value: newSchedule })
-      .eq('key', 'schedule');
+      .upsert({ key: 'schedule', value: newSchedule }, { onConflict: 'key' });
     if (!error) setSchedule(newSchedule);
   }
 
@@ -363,9 +380,13 @@ export default function Dashboard() {
                       <span className="inline-flex items-center gap-1 text-green-400 bg-green-500/10 border border-green-500/30 px-2 py-0.5 rounded-full text-xs font-medium">
                         <CheckCircle size={12} /> Sucesso
                       </span>
-                    ) : (
+                    ) : r.status === 'error' ? (
                       <span className="inline-flex items-center gap-1 text-red-400 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full text-xs font-medium">
                         <XCircle size={12} /> Erro
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-gray-400 bg-gray-500/10 border border-gray-500/30 px-2 py-0.5 rounded-full text-xs font-medium">
+                        <Clock size={12} /> Sem execução
                       </span>
                     )}
                   </td>
@@ -385,7 +406,7 @@ export default function Dashboard() {
                     )}
                   </td>
                   <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">
-                    {new Date(r.executed_at).toLocaleString('pt-BR')}
+                    {r.executed_at ? new Date(r.executed_at).toLocaleString('pt-BR') : '-'}
                   </td>
                 </tr>
               ))}
