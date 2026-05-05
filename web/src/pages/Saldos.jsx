@@ -6,20 +6,6 @@ const SELECTION_STORAGE_KEY = 'saldos_selected_accounts';
 const WITHDRAWAL_SELECTION_STORAGE_KEY = 'saldos_selected_withdrawal_accounts';
 const WITHDRAWAL_FEES_STORAGE_KEY = 'saldos_withdrawal_fees';
 
-const PLATFORM_COLORS = {
-  'Platform1': '#818cf8',
-  'Platform2': '#34d399',
-  'Platform3': '#fb923c',
-  'Platform4': '#f472b6',
-  'Platform5': '#60a5fa',
-  'Platform6': '#a78bfa',
-  'Platform7': '#facc15',
-};
-
-function getPlatformColor(platform) {
-  return PLATFORM_COLORS[platform] || '#ffffff';
-}
-
 function parseBalance(value) {
   const normalized = String(value ?? '0')
     .replace(/[^\d,.-]/g, '')
@@ -433,7 +419,7 @@ export default function Saldos() {
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-100 truncate">{account.name}</p>
-                          <p className="text-xs truncate" style={{ color: getPlatformColor(account.platform) }}>{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                          <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
                         </div>
                         <div className="sm:text-right">
                           <p className="text-lg font-bold text-white">{formatCurrency(account.balanceValue)}</p>
@@ -488,7 +474,6 @@ export default function Saldos() {
                 <button
                   onClick={() => setWithdrawalModalAccount(account.key)}
                   className="w-full text-left p-4 pr-12 transition-colors hover:bg-gray-800/40"
-                  style={{ borderColor: getPlatformColor(account.platform) }}
                 >
                   <div className="flex items-center gap-4">
                     <span
@@ -505,7 +490,7 @@ export default function Saldos() {
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-100 truncate">{account.name}</p>
-                          <p className="text-xs truncate" style={{ color: getPlatformColor(account.platform) }}>{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                          <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
                         </div>
                         <div className="sm:text-right">
                           <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalNet)}</p>
@@ -558,8 +543,8 @@ export default function Saldos() {
           <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <History size={18} className="text-indigo-400" />
-                <div>
+                <History size={18} className="text-indigo-400 shrink-0" />
+                <div className="min-w-0">
                   <h3 className="font-semibold text-white truncate">Histórico da conta</h3>
                   <p className="text-xs text-gray-500 truncate">
                     {modalSummary?.name || modalAccount}
@@ -628,7 +613,7 @@ export default function Saldos() {
           <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <ArrowDownCircle size={18} className="text-red-400" />
+                <ArrowDownCircle size={18} className="text-red-400 shrink-0" />
                 <div className="min-w-0">
                   <h3 className="font-semibold text-white truncate">Histórico de saques</h3>
                   <p className="text-xs text-gray-500 truncate">
