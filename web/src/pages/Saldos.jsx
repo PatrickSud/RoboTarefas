@@ -524,7 +524,7 @@ export default function Saldos() {
               
               {/* Settings Popover */}
               {isEditingFee && (
-                <div className="absolute top-12 right-2 p-4 w-64 bg-gray-800 border border-gray-700 rounded-xl z-20 shadow-xl flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+                <div className="absolute top-12 left-2 right-2 mx-auto max-w-[260px] p-4 bg-gray-800 border border-gray-700 rounded-xl z-50 shadow-xl flex flex-col gap-4" onClick={e => e.stopPropagation()}>
                   <div>
                     <label className="text-xs text-gray-300 font-medium block mb-1">Taxa de Saque (%)</label>
                     <input
