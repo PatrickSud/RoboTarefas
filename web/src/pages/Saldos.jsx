@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle2, Circle, Clock, History, Trash2, Wallet, X } from 'lucide-react';
+import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Trash2, Wallet, X } from 'lucide-react';
+
+const SELECTION_STORAGE_KEY = 'saldos_selected_accounts';
+const WITHDRAWAL_SELECTION_STORAGE_KEY = 'saldos_selected_withdrawal_accounts';
 
 function parseBalance(value) {
   const normalized = String(value ?? '0')
@@ -40,11 +43,22 @@ function resultKey(result) {
   return `result:${normalizeKey(result.account_name)}|${normalizeKey(result.platform)}|${normalizeKey(result.phone)}`;
 }
 
+function loadSavedSelection(storageKey) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    return Array.isArray(saved) ? new Set(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Saldos() {
   const [accounts, setAccounts] = useState([]);
   const [results, setResults] = useState([]);
   const [modalAccount, setModalAccount] = useState(null);
+  const [withdrawalModalAccount, setWithdrawalModalAccount] = useState(null);
   const [selectedForTotal, setSelectedForTotal] = useState(new Set());
+  const [selectedForWithdrawals, setSelectedForWithdrawals] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
 
@@ -125,9 +139,31 @@ export default function Saldos() {
     if (summaries.length === 0) return;
     setSelectedForTotal(prev => {
       if (prev.size > 0) return prev;
+      const saved = loadSavedSelection(SELECTION_STORAGE_KEY);
+      if (saved) return new Set([...saved].filter(key => summaries.some(account => account.key === key)));
       return new Set(summaries.map(account => account.key));
     });
   }, [summaries]);
+
+  useEffect(() => {
+    if (summaries.length === 0) return;
+    setSelectedForWithdrawals(prev => {
+      if (prev.size > 0) return prev;
+      const saved = loadSavedSelection(WITHDRAWAL_SELECTION_STORAGE_KEY);
+      if (saved) return new Set([...saved].filter(key => summaries.some(account => account.key === key)));
+      return new Set(summaries.map(account => account.key));
+    });
+  }, [summaries]);
+
+  useEffect(() => {
+    if (summaries.length === 0) return;
+    localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify([...selectedForTotal]));
+  }, [selectedForTotal, summaries.length]);
+
+  useEffect(() => {
+    if (summaries.length === 0) return;
+    localStorage.setItem(WITHDRAWAL_SELECTION_STORAGE_KEY, JSON.stringify([...selectedForWithdrawals]));
+  }, [selectedForWithdrawals, summaries.length]);
 
   const consolidatedTotal = useMemo(() => (
     summaries.reduce((sum, account) => (
@@ -139,26 +175,97 @@ export default function Saldos() {
     summaries.find(account => account.key === modalAccount) || null
   ), [summaries, modalAccount]);
 
-  const selectedHistory = useMemo(() => (
-    results
-      .filter(result => {
-        if (resultKey(result) === modalAccount) return true;
-        if (!modalSummary) return false;
-        return normalizeKey(result.account_name) === normalizeKey(modalSummary.name)
-          && normalizeKey(result.platform) === normalizeKey(modalSummary.platform)
-          && normalizeKey(result.phone) === normalizeKey(modalSummary.phone);
-      })
+  const withdrawalModalSummary = useMemo(() => (
+    summaries.find(account => account.key === withdrawalModalAccount) || null
+  ), [summaries, withdrawalModalAccount]);
+
+  function resultMatchesSummary(result, summary) {
+    if (!summary) return false;
+    if (resultKey(result) === summary.key) return true;
+    return normalizeKey(result.account_name) === normalizeKey(summary.name)
+      && normalizeKey(result.platform) === normalizeKey(summary.platform)
+      && normalizeKey(result.phone) === normalizeKey(summary.phone);
+  }
+
+  function dedupeBalanceHistory(history) {
+    return history
       .filter((result, index, list) => {
         const key = `${resultKey(result)}|${parseBalance(result.balance).toFixed(2)}|${formatDayKey(result.executed_at)}`;
         return list.findIndex(item => (
           `${resultKey(item)}|${parseBalance(item.balance).toFixed(2)}|${formatDayKey(item.executed_at)}` === key
         )) === index;
-      })
+      });
+  }
+
+  const selectedHistory = useMemo(() => (
+    dedupeBalanceHistory(results.filter(result => resultMatchesSummary(result, modalSummary)))
       .sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at))
   ), [results, modalAccount, modalSummary]);
 
+  const withdrawalsByAccount = useMemo(() => {
+    const map = new Map();
+    for (const summary of summaries) {
+      const history = dedupeBalanceHistory(results.filter(result => resultMatchesSummary(result, summary)))
+        .sort((a, b) => new Date(a.executed_at) - new Date(b.executed_at));
+      const withdrawals = [];
+      for (let index = 1; index < history.length; index += 1) {
+        const previous = history[index - 1];
+        const current = history[index];
+        const previousBalance = parseBalance(previous.balance);
+        const currentBalance = parseBalance(current.balance);
+        if (previousBalance > 0 && currentBalance < previousBalance) {
+          withdrawals.push({
+            id: current.id,
+            accountKey: summary.key,
+            accountName: summary.name,
+            platform: summary.platform,
+            phone: summary.phone,
+            date: current.executed_at,
+            previousBalance,
+            currentBalance,
+            amount: previousBalance - currentBalance,
+            row: current,
+          });
+        }
+      }
+      map.set(summary.key, withdrawals.sort((a, b) => new Date(b.date) - new Date(a.date)));
+    }
+    return map;
+  }, [summaries, results]);
+
+  const withdrawalSummaries = useMemo(() => (
+    summaries.map(account => {
+      const withdrawals = withdrawalsByAccount.get(account.key) || [];
+      return {
+        ...account,
+        withdrawalCount: withdrawals.length,
+        withdrawalTotal: withdrawals.reduce((sum, withdrawal) => sum + withdrawal.amount, 0),
+        latestWithdrawal: withdrawals[0] || null,
+      };
+    }).filter(account => account.withdrawalCount > 0)
+  ), [summaries, withdrawalsByAccount]);
+
+  const consolidatedWithdrawalsTotal = useMemo(() => (
+    withdrawalSummaries.reduce((sum, account) => (
+      selectedForWithdrawals.has(account.key) ? sum + account.withdrawalTotal : sum
+    ), 0)
+  ), [withdrawalSummaries, selectedForWithdrawals]);
+
+  const selectedWithdrawalHistory = useMemo(() => (
+    withdrawalsByAccount.get(withdrawalModalAccount) || []
+  ), [withdrawalsByAccount, withdrawalModalAccount]);
+
   function toggleAccount(accountKey) {
     setSelectedForTotal(prev => {
+      const next = new Set(prev);
+      if (next.has(accountKey)) next.delete(accountKey);
+      else next.add(accountKey);
+      return next;
+    });
+  }
+
+  function toggleWithdrawalAccount(accountKey) {
+    setSelectedForWithdrawals(prev => {
       const next = new Set(prev);
       if (next.has(accountKey)) next.delete(accountKey);
       else next.add(accountKey);
@@ -172,6 +279,14 @@ export default function Saldos() {
 
   function clearSelection() {
     setSelectedForTotal(new Set());
+  }
+
+  function selectAllWithdrawals() {
+    setSelectedForWithdrawals(new Set(withdrawalSummaries.map(account => account.key)));
+  }
+
+  function clearWithdrawalSelection() {
+    setSelectedForWithdrawals(new Set());
   }
 
   async function deleteHistoryRow(row) {
