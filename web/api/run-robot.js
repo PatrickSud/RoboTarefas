@@ -1,4 +1,4 @@
-const { EC2Client, StartInstancesCommand } = require('@aws-sdk/client-ec2')
+import { EC2Client, StartInstancesCommand } from '@aws-sdk/client-ec2'
 
 function getRequiredEnv() {
   const required = [
@@ -28,7 +28,7 @@ function getRequiredEnv() {
   }
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, message: 'Método não permitido.' })
     return
