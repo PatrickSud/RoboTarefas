@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import HistoryPage from './pages/HistoryPage';
 import Financeiro from './pages/Financeiro';
+import Saldos from './pages/Saldos';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/financeiro" element={<Financeiro />} />
+          <Route path="/saldos" element={<Saldos />} />
         </Route>
       </Routes>
     </BrowserRouter>

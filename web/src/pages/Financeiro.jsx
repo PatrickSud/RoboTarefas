@@ -483,7 +483,7 @@ export default function Financeiro() {
                 <p className="text-xl font-bold text-white">R$ {totalSaques.toFixed(2)}</p>
                 <p className="text-xs text-gray-500 mt-1">{saquesPorConta.length} conta(s)</p>
               </div>
-              {saquesPorConta.map((s, i) => (
+              {saquesPorConta.map((s) => (
                 <div key={s.account} className="bg-gray-800/60 border border-gray-700 rounded-xl p-3">
                   <p className="text-xs text-gray-500 truncate mb-1">{s.account}</p>
                   <p className="text-lg font-bold text-red-400">- R$ {s.total.toFixed(2)}</p>

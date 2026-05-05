@@ -13,6 +13,7 @@ drop policy if exists "Admins can insert accounts" on public.accounts;
 drop policy if exists "Admins can update accounts" on public.accounts;
 drop policy if exists "Admins can delete accounts" on public.accounts;
 drop policy if exists "Admins can read run results" on public.account_run_results;
+drop policy if exists "Admins can delete run results" on public.account_run_results;
 
 create policy "Admins can read app admins"
 on public.app_admins
@@ -73,6 +74,17 @@ using (
 create policy "Admins can read run results"
 on public.account_run_results
 for select
+to authenticated
+using (
+    exists (
+        select 1 from public.app_admins
+        where app_admins.user_id = auth.uid()
+    )
+);
+
+create policy "Admins can delete run results"
+on public.account_run_results
+for delete
 to authenticated
 using (
     exists (

@@ -57,7 +57,9 @@ export default function Dashboard() {
       });
       const data = await parseApiResponse(res);
       if (data.ok) setSchedule(data);
-    } catch {}
+    } catch (error) {
+      console.warn('Erro ao buscar agendamento:', error);
+    }
   }
 
   async function updateSchedule(updates) {
@@ -70,7 +72,9 @@ export default function Dashboard() {
       });
       const data = await parseApiResponse(res);
       if (data.ok) await fetchSchedule();
-    } catch {}
+    } catch (error) {
+      console.warn('Erro ao atualizar agendamento:', error);
+    }
     setScheduleUpdating(false);
   }
 
@@ -141,7 +145,7 @@ export default function Dashboard() {
       const newLogs = data.logs || '';
       if (newLogs) {
         setLogs(newLogs);
-        try { localStorage.setItem('robot-last-logs', newLogs); } catch {}
+        try { localStorage.setItem('robot-last-logs', newLogs); } catch (error) { console.warn('Erro ao salvar logs:', error); }
       }
       setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
     } catch { setLogs('(Erro ao buscar logs)'); }
@@ -160,7 +164,7 @@ export default function Dashboard() {
       setAwsStatus(data.ok ? 'online' : 'offline');
       if (data.logs) {
         setLogs(data.logs);
-        try { localStorage.setItem('robot-last-logs', data.logs); } catch {}
+        try { localStorage.setItem('robot-last-logs', data.logs); } catch (error) { console.warn('Erro ao salvar logs:', error); }
         setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
       }
 
