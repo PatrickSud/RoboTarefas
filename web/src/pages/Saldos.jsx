@@ -452,24 +452,23 @@ export default function Saldos() {
               </div>
 
               {/* Body */}
-              <div className="p-4 flex-1 flex flex-col gap-3">
+              <div className="p-3 sm:p-4 flex-1 flex flex-col gap-3">
                 {/* Saldo Block */}
                 <div 
-                  className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors ${checkedTotal ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
+                  className={`relative p-2.5 sm:p-3 rounded-xl border cursor-pointer transition-colors ${checkedTotal ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
                   onClick={() => toggleAccount(account.key)}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className={checkedTotal ? 'text-indigo-400' : 'text-gray-600'}>
-                      {checkedTotal ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                  <div className="flex items-start gap-2.5">
+                    <span className={`mt-0.5 shrink-0 ${checkedTotal ? 'text-indigo-400' : 'text-gray-600'}`}>
+                      {checkedTotal ? <CheckCircle2 size={18} /> : <Circle size={18} />}
                     </span>
-                    <div>
-                      <p className="text-[11px] font-medium text-gray-400 mb-0.5 uppercase tracking-wide">Saldo Atual</p>
-                      <p className="text-lg font-bold text-white leading-none">{formatCurrency(account.balanceValue)}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Saldo Atual</p>
+                      <p className="text-base sm:text-lg font-bold text-white leading-none truncate mb-1">{formatCurrency(account.balanceValue)}</p>
+                      <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">
+                        {formatDate(account.latest?.executed_at)}
+                      </p>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] text-gray-400">{formatDate(account.latest?.executed_at).split(' ')[0]}</p>
-                    <p className="text-[10px] text-gray-600">{formatDate(account.latest?.executed_at).split(' ')[1] || ''}</p>
                   </div>
                 </div>
 
@@ -477,28 +476,26 @@ export default function Saldos() {
                 {hasWithdrawals ? (
                   <div className="relative">
                     <div 
-                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors ${checkedWithdrawal ? 'bg-red-500/10 border-red-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
+                      className={`relative p-2.5 sm:p-3 rounded-xl border cursor-pointer transition-colors ${checkedWithdrawal ? 'bg-red-500/10 border-red-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
                       onClick={() => toggleWithdrawalAccount(account.key)}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className={checkedWithdrawal ? 'text-red-400' : 'text-gray-600'}>
-                          {checkedWithdrawal ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                      <div className="flex items-start gap-2.5">
+                        <span className={`mt-0.5 shrink-0 ${checkedWithdrawal ? 'text-red-400' : 'text-gray-600'}`}>
+                          {checkedWithdrawal ? <CheckCircle2 size={18} /> : <Circle size={18} />}
                         </span>
-                        <div>
-                          <p className="text-[11px] font-medium text-gray-400 mb-0.5 uppercase tracking-wide">Saques ({ws.withdrawalCount})</p>
-                          <p className="text-lg font-bold text-red-400 leading-none">-{formatCurrency(ws.withdrawalNet)}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Saques ({ws.withdrawalCount})</p>
+                          <p className="text-base sm:text-lg font-bold text-red-400 leading-none truncate mb-1">-{formatCurrency(ws.withdrawalNet)}</p>
+                          <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">Bruto -{formatCurrency(ws.withdrawalTotal)}</p>
                         </div>
                       </div>
-                      <div className="text-right flex flex-col items-end gap-1">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
-                          className={`p-1 rounded-md transition-colors ${ws.withdrawalFee > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
-                          title="Configurar Taxa"
-                        >
-                          <Settings size={14} />
-                        </button>
-                        <p className="text-[10px] text-gray-500 mt-1">Bruto -{formatCurrency(ws.withdrawalTotal)}</p>
-                      </div>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
+                        className={`absolute top-2.5 right-2.5 p-1 rounded-md transition-colors ${ws.withdrawalFee > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
+                        title="Configurar Taxa"
+                      >
+                        <Settings size={14} />
+                      </button>
                     </div>
                     {isEditingFee && (
                       <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-gray-800 border border-gray-700 rounded-xl z-10 shadow-xl flex items-center justify-between">
