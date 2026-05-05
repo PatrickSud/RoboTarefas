@@ -37,7 +37,9 @@ export default function Dashboard() {
   const [runMessage, setRunMessage] = useState('');
   const [autoShutdown, setAutoShutdown] = useState(true);
   const [awsStatus, setAwsStatus] = useState('unknown'); // 'online' | 'offline' | 'unknown'
-  const [logs, setLogs] = useState('');
+  const [logs, setLogs] = useState(() => {
+    try { return localStorage.getItem('robot-last-logs') || ''; } catch { return ''; }
+  });
   const [logsOpen, setLogsOpen] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [livePolling, setLivePolling] = useState(false);
@@ -136,7 +138,11 @@ export default function Dashboard() {
       });
       const data = await parseApiResponse(res);
       if (!res.ok && data.message) setRunMessage(data.message);
-      setLogs(data.logs || '(Sem logs disponíveis)');
+      const newLogs = data.logs || '';
+      if (newLogs) {
+        setLogs(newLogs);
+        try { localStorage.setItem('robot-last-logs', newLogs); } catch {}
+      }
       setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
     } catch { setLogs('(Erro ao buscar logs)'); }
     if (!livePolling) setLogsLoading(false);
@@ -154,6 +160,7 @@ export default function Dashboard() {
       setAwsStatus(data.ok ? 'online' : 'offline');
       if (data.logs) {
         setLogs(data.logs);
+        try { localStorage.setItem('robot-last-logs', data.logs); } catch {}
         setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
       }
 
