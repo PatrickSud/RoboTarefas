@@ -5,6 +5,7 @@ import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Settings, Trash2
 const SELECTION_STORAGE_KEY = 'saldos_selected_accounts';
 const WITHDRAWAL_SELECTION_STORAGE_KEY = 'saldos_selected_withdrawal_accounts';
 const WITHDRAWAL_FEES_STORAGE_KEY = 'saldos_withdrawal_fees';
+const EXCHANGE_CONFIGS_STORAGE_KEY = 'saldos_exchange_configs';
 const COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6', '#60a5fa', '#a78bfa', '#facc15'];
 
 function parseBalance(value) {
@@ -74,6 +75,13 @@ export default function Saldos() {
       return {};
     }
   });
+  const [exchangeConfigs, setExchangeConfigs] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(EXCHANGE_CONFIGS_STORAGE_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  });
   const [editingFeeFor, setEditingFeeFor] = useState(null);
 
   useEffect(() => {
@@ -119,6 +127,11 @@ export default function Saldos() {
       const key = accountKey(account);
       const fallbackKey = `result:${normalizeKey(account.name)}|${normalizeKey(account.platform)}|${normalizeKey(account.phone)}`;
       const latest = latestByKey.get(key) || latestByKey.get(fallbackKey);
+      
+      const rawBalance = parseBalance(latest?.balance);
+      const ex = exchangeConfigs[key] || { rate: 1, symbol: '' };
+      const balanceValue = rawBalance * (ex.rate || 1);
+
       return {
         key,
         name: account.name,
@@ -126,7 +139,10 @@ export default function Saldos() {
         phone: latest?.phone || account.phone,
         active: account.active,
         latest,
-        balanceValue: parseBalance(latest?.balance),
+        rawBalance,
+        balanceValue,
+        currencySymbol: ex.symbol,
+        exchangeRate: ex.rate || 1,
       };
     });
 
@@ -134,6 +150,10 @@ export default function Saldos() {
       const key = resultKey(result);
       const fallbackAccountKey = result.account_id ? `account:${result.account_id}` : null;
       if (!accountKeys.has(key) && (!fallbackAccountKey || !accountKeys.has(fallbackAccountKey))) {
+        const rawBalance = parseBalance(result.balance);
+        const ex = exchangeConfigs[key] || { rate: 1, symbol: '' };
+        const balanceValue = rawBalance * (ex.rate || 1);
+        
         merged.push({
           key,
           name: result.account_name,
@@ -141,7 +161,10 @@ export default function Saldos() {
           phone: result.phone,
           active: true,
           latest: result,
-          balanceValue: parseBalance(result.balance),
+          rawBalance,
+          balanceValue,
+          currencySymbol: ex.symbol,
+          exchangeRate: ex.rate || 1,
         });
       }
     }
@@ -157,35 +180,38 @@ export default function Saldos() {
     });
   }, [accounts, results]);
 
+  const initTotalRef = useRef(false);
+  const initWithdrawalRef = useRef(false);
+
   useEffect(() => {
     if (summaries.length === 0) return;
-    setSelectedForTotal(prev => {
-      if (prev.size > 0) return prev;
+    if (!initTotalRef.current) {
+      initTotalRef.current = true;
       const saved = loadSavedSelection(SELECTION_STORAGE_KEY);
-      if (saved) return new Set([...saved].filter(key => summaries.some(account => account.key === key)));
-      return new Set(summaries.map(account => account.key));
-    });
-  }, [summaries]);
+      if (saved) {
+        setSelectedForTotal(new Set([...saved].filter(key => summaries.some(account => account.key === key))));
+      } else {
+        setSelectedForTotal(new Set(summaries.map(account => account.key)));
+      }
+    } else {
+      localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify([...selectedForTotal]));
+    }
+  }, [summaries, selectedForTotal]);
 
   useEffect(() => {
     if (summaries.length === 0) return;
-    setSelectedForWithdrawals(prev => {
-      if (prev.size > 0) return prev;
+    if (!initWithdrawalRef.current) {
+      initWithdrawalRef.current = true;
       const saved = loadSavedSelection(WITHDRAWAL_SELECTION_STORAGE_KEY);
-      if (saved) return new Set([...saved].filter(key => summaries.some(account => account.key === key)));
-      return new Set(summaries.map(account => account.key));
-    });
-  }, [summaries]);
-
-  useEffect(() => {
-    if (summaries.length === 0) return;
-    localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify([...selectedForTotal]));
-  }, [selectedForTotal, summaries.length]);
-
-  useEffect(() => {
-    if (summaries.length === 0) return;
-    localStorage.setItem(WITHDRAWAL_SELECTION_STORAGE_KEY, JSON.stringify([...selectedForWithdrawals]));
-  }, [selectedForWithdrawals, summaries.length]);
+      if (saved) {
+        setSelectedForWithdrawals(new Set([...saved].filter(key => summaries.some(account => account.key === key))));
+      } else {
+        setSelectedForWithdrawals(new Set(summaries.map(account => account.key)));
+      }
+    } else {
+      localStorage.setItem(WITHDRAWAL_SELECTION_STORAGE_KEY, JSON.stringify([...selectedForWithdrawals]));
+    }
+  }, [summaries, selectedForWithdrawals]);
 
   const consolidatedTotal = useMemo(() => (
     summaries.reduce((sum, account) => (
@@ -246,8 +272,12 @@ export default function Saldos() {
       for (let index = 1; index < history.length; index += 1) {
         const previous = history[index - 1];
         const current = history[index];
-        const previousBalance = parseBalance(previous.balance);
-        const currentBalance = parseBalance(current.balance);
+        const ex = exchangeConfigs[summary.key] || { rate: 1 };
+        const rate = ex.rate || 1;
+        
+        const previousBalance = parseBalance(previous.balance) * rate;
+        const currentBalance = parseBalance(current.balance) * rate;
+        
         if (previousBalance > 0 && currentBalance < previousBalance) {
           withdrawals.push({
             id: current.id,
@@ -335,14 +365,25 @@ export default function Saldos() {
     setSelectedForWithdrawals(new Set());
   }
 
-  function saveFee(accountKey, value) {
-    const raw = parseFloat(value);
-    const fee = Number.isNaN(raw) || raw < 0 ? 0 : raw > 100 ? 100 : raw;
+  function saveConfig(accountKey, feeValue, symbolValue, rateValue) {
+    const rawFee = parseFloat(feeValue);
+    const fee = Number.isNaN(rawFee) || rawFee < 0 ? 0 : rawFee > 100 ? 100 : rawFee;
     setWithdrawalFees(prev => {
       const next = { ...prev, [accountKey]: fee };
       localStorage.setItem(WITHDRAWAL_FEES_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
+
+    const rawRate = parseFloat(rateValue);
+    const rate = Number.isNaN(rawRate) || rawRate <= 0 ? 1 : rawRate;
+    const symbol = String(symbolValue || '').trim();
+    
+    setExchangeConfigs(prev => {
+      const next = { ...prev, [accountKey]: { symbol, rate } };
+      localStorage.setItem(EXCHANGE_CONFIGS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+
     setEditingFeeFor(null);
   }
 
@@ -451,6 +492,13 @@ export default function Saldos() {
                   <button onClick={() => setModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saldos">
                     <History size={16} />
                   </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
+                    className={`p-1.5 rounded-lg transition-colors ${ws?.withdrawalFee > 0 || account.exchangeRate !== 1 ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}
+                    title="Configurações da Conta"
+                  >
+                    <Settings size={16} />
+                  </button>
                   {hasWithdrawals && (
                     <button onClick={() => setWithdrawalModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saques">
                       <ArrowDownCircle size={16} />
@@ -458,6 +506,46 @@ export default function Saldos() {
                   )}
                 </div>
               </div>
+              
+              {/* Settings Popover */}
+              {isEditingFee && (
+                <div className="absolute top-12 right-2 p-4 w-64 bg-gray-800 border border-gray-700 rounded-xl z-20 shadow-xl flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+                  <div>
+                    <label className="text-xs text-gray-300 font-medium block mb-1">Taxa de Saque (%)</label>
+                    <input
+                      type="number"
+                      id={`fee-${account.key}`}
+                      min="0" max="100" step="0.1"
+                      defaultValue={ws?.withdrawalFee || 0}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 border-b border-gray-700 pb-1">Câmbio de Moeda</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">Símbolo</label>
+                        <input type="text" id={`sym-${account.key}`} defaultValue={account.currencySymbol} placeholder="ex: US$" className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">Cotação (R$)</label>
+                        <input type="number" id={`rate-${account.key}`} step="0.01" min="0.01" defaultValue={account.exchangeRate} className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const feeVal = document.getElementById(`fee-${account.key}`).value;
+                      const symVal = document.getElementById(`sym-${account.key}`).value;
+                      const rateVal = document.getElementById(`rate-${account.key}`).value;
+                      saveConfig(account.key, feeVal, symVal, rateVal);
+                    }}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Salvar Configurações
+                  </button>
+                </div>
+              )}
 
               {/* Body */}
               <div className="p-3 sm:p-4 flex-1 flex flex-col gap-3">
@@ -472,7 +560,14 @@ export default function Saldos() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Saldo Atual</p>
-                      <p className="text-base sm:text-lg font-bold text-white leading-none truncate mb-1">{formatCurrency(account.balanceValue)}</p>
+                      <div className="flex items-baseline gap-1.5 flex-wrap mb-1">
+                        <p className="text-base sm:text-lg font-bold text-white leading-none truncate">{formatCurrency(account.balanceValue)}</p>
+                        {account.exchangeRate !== 1 && (
+                          <p className="text-[10px] text-gray-500 truncate" title="Moeda original">
+                            ({account.currencySymbol} {formatCurrency(account.rawBalance).replace('R$', '').trim()})
+                          </p>
+                        )}
+                      </div>
                       <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">
                         {formatDate(account.latest?.executed_at)}
                       </p>
@@ -497,40 +592,7 @@ export default function Saldos() {
                           <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">Bruto -{formatCurrency(ws.withdrawalTotal)}</p>
                         </div>
                       </div>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
-                        className={`absolute top-2.5 right-2.5 p-1 rounded-md transition-colors ${ws.withdrawalFee > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
-                        title="Configurar Taxa"
-                      >
-                        <Settings size={14} />
-                      </button>
                     </div>
-                    {isEditingFee && (
-                      <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-gray-800 border border-gray-700 rounded-xl z-10 shadow-xl flex items-center justify-between">
-                        <label className="text-xs text-gray-300 font-medium">Taxa (%)</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            defaultValue={ws.withdrawalFee}
-                            onKeyDown={event => { if (event.key === 'Enter') saveFee(account.key, event.currentTarget.value); if (event.key === 'Escape') setEditingFeeFor(null); }}
-                            className="w-16 px-2 py-1 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-red-500 focus:outline-none"
-                            autoFocus
-                          />
-                          <button 
-                            onClick={(e) => {
-                              const val = e.currentTarget.previousElementSibling.value;
-                              saveFee(account.key, val);
-                            }}
-                            className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-medium transition-colors"
-                          >
-                            Salvar
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="flex-1 border border-dashed border-gray-800 rounded-xl flex items-center justify-center p-3">
