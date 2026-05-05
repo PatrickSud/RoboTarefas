@@ -63,19 +63,19 @@ function unauthorizedMessage(req) {
   return 'Não autorizado: ROBOT_API_TOKEN da AWS é diferente do token configurado no Netlify.'
 }
 
-function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true') {
+function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true', isManual = false) {
   shutdownEnabled = shouldShutdown
   running = true
   lastRun = new Date().toISOString()
   lastExitCode = null
   console.log(
-    `Desligamento automático: ${shouldShutdown ? 'ATIVO' : 'INATIVO'}`
+    `Desligamento automático: ${shouldShutdown ? 'ATIVO' : 'INATIVO'} | Execução Manual: ${isManual}`
   )
 
   const child = spawn(process.execPath, ['index.js'], {
     cwd: __dirname,
     stdio: 'inherit',
-    env: process.env
+    env: { ...process.env, IS_MANUAL_RUN: String(isManual) }
   })
 
   child.on('exit', code => {
@@ -133,7 +133,7 @@ const server = http.createServer(async (req, res) => {
 
     let body = ''
     for await (const chunk of req) body += chunk
-    const { autoShutdown: bodyShutdown } = JSON.parse(body || '{}')
+    const { autoShutdown: bodyShutdown, isManual } = JSON.parse(body || '{}')
     const shouldShutdown =
       bodyShutdown !== undefined
         ? bodyShutdown
@@ -141,7 +141,7 @@ const server = http.createServer(async (req, res) => {
 
     if (idleTimer) clearTimeout(idleTimer)
     await runCleanup()
-    runRobot(shouldShutdown)
+    runRobot(shouldShutdown, isManual === true)
     sendJson(res, 202, { ok: true, message: 'Execução iniciada.', lastRun })
     return
   }

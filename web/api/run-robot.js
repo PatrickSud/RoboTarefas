@@ -131,13 +131,14 @@ export default async function handler(req, res) {
     }
 
     if (action === 'run') {
+      const { autoShutdown, isManual } = parseBody(req)
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/run`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ autoShutdown }),
+        body: JSON.stringify({ autoShutdown, isManual }),
         signal: AbortSignal.timeout(8000)
       })
       const payload = await response.json()
@@ -233,7 +234,19 @@ export default async function handler(req, res) {
         updateParams.State = newEnabled ? 'ENABLED' : 'DISABLED'
       }
 
-      if (newHour !== undefined && newHour !== null) {
+      const { hours } = parseBody(req)
+
+      if (hours !== undefined && Array.isArray(hours)) {
+        if (hours.length === 0) {
+          updateParams.State = 'DISABLED'
+        } else {
+          const tz = current.ScheduleExpressionTimezone || 'America/Sao_Paulo'
+          const hoursString = hours.join(',')
+          updateParams.ScheduleExpression = `cron(0 ${hoursString} * * ? *)`
+          updateParams.ScheduleExpressionTimezone = tz
+          updateParams.State = 'ENABLED'
+        }
+      } else if (newHour !== undefined && newHour !== null) {
         const tz = current.ScheduleExpressionTimezone || 'America/Sao_Paulo'
         updateParams.ScheduleExpression = `cron(0 ${newHour} * * ? *)`
         updateParams.ScheduleExpressionTimezone = tz

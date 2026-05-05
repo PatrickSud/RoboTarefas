@@ -138,13 +138,35 @@ export default function Accounts() {
 
   const sensors = useSensors(useSensor(PointerSensor));
 
+  async function syncAwsSchedule(accountsList) {
+    try {
+      const hoursSet = new Set();
+      for (const acc of accountsList) {
+        if (acc.active && acc.schedules && Array.isArray(acc.schedules)) {
+          acc.schedules.forEach(h => hoursSet.add(h));
+        }
+      }
+      const uniqueHours = Array.from(hoursSet).sort((a, b) => a - b);
+      
+      await fetch('/api/run-robot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update-schedule', hours: uniqueHours }),
+      });
+    } catch (e) {
+      console.error('Erro ao sincronizar agendamento AWS:', e);
+    }
+  }
+
   async function fetchAccounts() {
     const { data, error } = await supabase
       .from('accounts')
       .select('*')
       .order('sort_order', { ascending: true, nullsFirst: false });
 
-    if (!error && data) setAccounts(data);
+    if (!error && data) {
+      setAccounts(data);
+    }
     setLoading(false);
   }
 
@@ -157,8 +179,13 @@ export default function Accounts() {
       .from('accounts')
       .update({ active: !account.active, updated_at: new Date().toISOString() })
       .eq('id', account.id);
-    if (!error)
-      setAccounts(prev => prev.map(a => a.id === account.id ? { ...a, active: !a.active } : a));
+    if (!error) {
+      setAccounts(prev => {
+        const next = prev.map(a => a.id === account.id ? { ...a, active: !a.active } : a);
+        syncAwsSchedule(next);
+        return next;
+      });
+    }
   }
 
   async function toggleTestMode(account) {
@@ -173,7 +200,13 @@ export default function Accounts() {
   async function deleteAccount(account) {
     if (!confirm(`Tem certeza que deseja excluir "${account.name}"?`)) return;
     const { error } = await supabase.from('accounts').delete().eq('id', account.id);
-    if (!error) setAccounts(prev => prev.filter(a => a.id !== account.id));
+    if (!error) {
+      setAccounts(prev => {
+        const next = prev.filter(a => a.id !== account.id);
+        syncAwsSchedule(next);
+        return next;
+      });
+    }
   }
 
   async function handleDragEnd(event) {
@@ -231,7 +264,16 @@ export default function Accounts() {
         <AccountForm
           account={editingAccount}
           onClose={() => setShowForm(false)}
-          onSaved={() => { setShowForm(false); fetchAccounts(); }}
+          onSaved={async () => {
+            setShowForm(false);
+            const { data } = await supabase.from('accounts').select('*');
+            if (data) {
+              setAccounts(data);
+              syncAwsSchedule(data);
+            } else {
+              fetchAccounts();
+            }
+          }}
         />
       )}
 
@@ -285,6 +327,7 @@ function AccountForm({ account, onClose, onSaved }) {
     receives_whatsapp: account?.receives_whatsapp ?? true,
     active: account?.active ?? true,
     test_mode: account?.test_mode ?? false,
+    schedules: account?.schedules || [],
   });
   const [saving, setSaving] = useState(false);
 
@@ -319,6 +362,18 @@ function AccountForm({ account, onClose, onSaved }) {
     else alert('Erro ao salvar: ' + error.message);
   }
 
+  const HOURS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+
+  function toggleSchedule(hour) {
+    setForm(prev => {
+      const current = prev.schedules || [];
+      if (current.includes(hour)) {
+        return { ...prev, schedules: current.filter(h => h !== hour) };
+      }
+      return { ...prev, schedules: [...current, hour].sort((a, b) => a - b) };
+    });
+  }
+
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 mb-6">
       <h3 className="font-semibold text-white mb-4">
@@ -332,13 +387,35 @@ function AccountForm({ account, onClose, onSaved }) {
         <Input label="E-mail" name="email" type="email" value={form.email} onChange={handleChange} />
         <Input label="Senha da Plataforma" name="password" value={form.password} onChange={handleChange} required />
 
-        <div className="sm:col-span-2 flex items-center gap-6 flex-wrap">
+        <div className="sm:col-span-2">
+          <label className="block text-sm font-medium text-gray-400 mb-2">Agendamentos (Horários de Brasília)</label>
+          <div className="flex flex-wrap gap-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+            {HOURS.map(h => {
+              const active = (form.schedules || []).includes(h);
+              return (
+                <button
+                  type="button"
+                  key={h}
+                  onClick={() => toggleSchedule(h)}
+                  className={`px-3 py-1 text-xs font-medium rounded-lg border transition-colors ${
+                    active ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/50' : 'bg-gray-800 text-gray-500 border-gray-600 hover:bg-gray-700 hover:text-gray-300'
+                  }`}
+                >
+                  {String(h).padStart(2, '0')}:00
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">A AWS vai ligar a máquina e rodar esta conta especificamente nestes horários.</p>
+        </div>
+
+        <div className="sm:col-span-2 flex items-center gap-6 flex-wrap mt-2">
           <Checkbox label="Ativo" name="active" checked={form.active} onChange={handleChange} />
           <Checkbox label="Recebe WhatsApp" name="receives_whatsapp" checked={form.receives_whatsapp} onChange={handleChange} />
           <Checkbox label="Modo Teste" name="test_mode" checked={form.test_mode} onChange={handleChange} />
         </div>
 
-        <div className="sm:col-span-2 flex items-center gap-3 pt-2">
+        <div className="sm:col-span-2 flex items-center gap-3 pt-4 border-t border-gray-800 mt-2">
           <button
             type="submit"
             disabled={saving}
