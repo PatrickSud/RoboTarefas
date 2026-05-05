@@ -290,17 +290,38 @@ export default function Saldos() {
   }
 
   async function deleteHistoryRow(row) {
-    if (!confirm(`Excluir este registro de histórico da conta "${row.account_name}"?`)) return;
-    setDeletingId(row.id);
-    const { error } = await supabase.from('account_run_results').delete().eq('id', row.id);
-    setDeletingId(null);
+    console.log('Tentando excluir registro de histórico:', row);
 
-    if (error) {
-      alert('Erro ao excluir histórico: ' + error.message);
+    if (!row || !row.id) {
+      console.error('Dados do registro inválidos para exclusão:', row);
       return;
     }
 
-    setResults(prev => prev.filter(result => result.id !== row.id));
+    const accountName = row.account_name || 'Conta desconhecida';
+    if (!confirm(`Excluir este registro de histórico da conta "${accountName}"?`)) {
+      console.log('Exclusão cancelada pelo usuário');
+      return;
+    }
+
+    try {
+      setDeletingId(row.id);
+      console.log('Chamando Supabase para deletar id:', row.id);
+      const { error } = await supabase.from('account_run_results').delete().eq('id', row.id);
+      setDeletingId(null);
+
+      if (error) {
+        console.error('Erro retornado pelo Supabase:', error);
+        alert('Erro ao excluir histórico: ' + error.message);
+        return;
+      }
+
+      console.log('Exclusão bem-sucedida no banco, atualizando estado local');
+      setResults(prev => prev.filter(result => result.id !== row.id));
+    } catch (err) {
+      console.error('Erro inesperado na função deleteHistoryRow:', err);
+      setDeletingId(null);
+      alert('Ocorreu um erro inesperado ao tentar excluir o registro.');
+    }
   }
 
   if (loading) {
