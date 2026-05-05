@@ -22,7 +22,7 @@ export default defineConfig([
     }
   },
   {
-    files: ['netlify/functions/**/*.js'],
+    files: ['api/**/*.js'],
     languageOptions: {
       globals: globals.node
     }
