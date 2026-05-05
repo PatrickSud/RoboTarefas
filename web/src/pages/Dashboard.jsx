@@ -44,39 +44,8 @@ export default function Dashboard() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [livePolling, setLivePolling] = useState(false);
   const [modalUrl, setModalUrl] = useState(null);
-  const [schedule, setSchedule] = useState(null);
-  const [scheduleUpdating, setScheduleUpdating] = useState(false);
   const logsRef = useRef(null);
 
-  async function fetchSchedule() {
-    try {
-      const res = await fetch('/api/run-robot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get-schedule' }),
-      });
-      const data = await parseApiResponse(res);
-      if (data.ok) setSchedule(data);
-    } catch (error) {
-      console.warn('Erro ao buscar agendamento:', error);
-    }
-  }
-
-  async function updateSchedule(updates) {
-    setScheduleUpdating(true);
-    try {
-      const res = await fetch('/api/run-robot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update-schedule', ...updates }),
-      });
-      const data = await parseApiResponse(res);
-      if (data.ok) await fetchSchedule();
-    } catch (error) {
-      console.warn('Erro ao atualizar agendamento:', error);
-    }
-    setScheduleUpdating(false);
-  }
 
   async function fetchLatestResults() {
     const [{ data: configPrefs }, { data: accounts }] = await Promise.all([
@@ -93,12 +62,20 @@ export default function Dashboard() {
       .limit(1000);
 
     if (!error && data) {
-      const latestByAccount = {};
+      const normalize = (str) => String(str || '').toLowerCase().trim();
+      const getRowKey = (r) => `${normalize(r.account_name)}|${normalize(r.platform)}|${normalize(r.phone)}`;
+      const getAccKey = (a) => `${normalize(a.name)}|${normalize(a.platform)}|${normalize(a.phone)}`;
+      
+      const latestByKey = {};
       for (const row of data) {
-        if (!latestByAccount[row.account_name]) latestByAccount[row.account_name] = row;
+        const key = row.account_id ? `id:${row.account_id}` : getRowKey(row);
+        if (!latestByKey[key]) latestByKey[key] = row;
       }
+      
       const merged = (accounts || []).map(account => {
-        const latest = latestByAccount[account.name];
+        const key = `id:${account.id}`;
+        const fallbackKey = getAccKey(account);
+        const latest = latestByKey[key] || latestByKey[fallbackKey];
         return latest || {
           id: `account-${account.id}`,
           account_id: account.id,
@@ -112,8 +89,11 @@ export default function Dashboard() {
           executed_at: null,
         };
       });
-      const accountNames = new Set((accounts || []).map(a => a.name));
-      const orphanResults = Object.values(latestByAccount).filter(row => !accountNames.has(row.account_name));
+      
+      const accountIds = new Set((accounts || []).map(a => `id:${a.id}`));
+      const accountFallbacks = new Set((accounts || []).map(getAccKey));
+      
+      const orphanResults = Object.keys(latestByKey).filter(k => !accountIds.has(k) && !accountFallbacks.has(k)).map(k => latestByKey[k]);
       setResults([...merged, ...orphanResults]);
     }
     setLoading(false);
@@ -180,7 +160,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchLatestResults();
     fetchAwsStatusAndLogs();
-    fetchSchedule();
 
     const channel = supabase
       .channel('dashboard-realtime')
@@ -329,25 +308,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {schedule && (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${schedule.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
-                <Clock size={20} />
-              </div>
-              <div>
-                <p className="font-semibold text-white">Agendamento Automático (AWS)</p>
-                <p className="text-xs text-gray-500">
-                  {schedule.enabled 
-                    ? `Ativo: A AWS vai ligar a máquina e rodar as contas automaticamente nos horários que você configurou na guia "Contas".` 
-                    : 'Desativado: O robô não rodará automaticamente. Configure os horários das contas para reativar.'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6 md:mb-8">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-5">
