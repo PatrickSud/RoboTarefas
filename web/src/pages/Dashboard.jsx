@@ -37,9 +37,7 @@ export default function Dashboard() {
   const [runMessage, setRunMessage] = useState('');
   const [autoShutdown, setAutoShutdown] = useState(true);
   const [awsStatus, setAwsStatus] = useState('unknown'); // 'online' | 'offline' | 'unknown'
-  const [logs, setLogs] = useState(() => {
-    try { return localStorage.getItem('robot-last-logs') || ''; } catch { return ''; }
-  });
+  const [logs, setLogs] = useState('');
   const [logsOpen, setLogsOpen] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [livePolling, setLivePolling] = useState(false);
@@ -115,20 +113,20 @@ export default function Dashboard() {
   async function fetchLogs() {
     if (!livePolling) setLogsLoading(true);
     try {
-      const res = await fetch('/api/run-robot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'logs' }),
-      });
-      const data = await parseApiResponse(res);
-      if (!res.ok && data.message) setRunMessage(data.message);
-      const newLogs = data.logs || '';
-      if (newLogs) {
+      const { data, error } = await supabase
+        .from('system_logs')
+        .select('message')
+        .order('created_at', { ascending: false })
+        .limit(300);
+
+      if (!error && data) {
+        const newLogs = data.reverse().map(r => r.message).join('\n');
         setLogs(newLogs);
-        try { localStorage.setItem('robot-last-logs', newLogs); } catch (error) { console.warn('Erro ao salvar logs:', error); }
+        setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
       }
-      setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
-    } catch { setLogs('(Erro ao buscar logs)'); }
+    } catch { 
+      setLogs('(Erro ao buscar logs do banco de dados)'); 
+    }
     if (!livePolling) setLogsLoading(false);
   }
 
@@ -137,16 +135,11 @@ export default function Dashboard() {
       const res = await fetch('/api/run-robot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'status' }),
+        body: JSON.stringify({ action: 'health' }),
       });
       const data = await parseApiResponse(res);
       if (!res.ok && data.message) setRunMessage(data.message);
       setAwsStatus(data.ok ? 'online' : 'offline');
-      if (data.logs) {
-        setLogs(data.logs);
-        try { localStorage.setItem('robot-last-logs', data.logs); } catch (error) { console.warn('Erro ao salvar logs:', error); }
-        setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
-      }
 
       if (data.ok && data.running === false && data.lastExitCode !== null) {
         setLivePolling(false);
@@ -160,11 +153,19 @@ export default function Dashboard() {
   useEffect(() => {
     fetchLatestResults();
     fetchAwsStatusAndLogs();
+    fetchLogs();
 
     const channel = supabase
       .channel('dashboard-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'account_run_results' }, () => {
         fetchLatestResults();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'system_logs' }, (payload) => {
+        setLogs(prev => {
+          const newLogs = prev ? prev + '\n' + payload.new.message : payload.new.message;
+          setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
+          return newLogs.split('\n').slice(-300).join('\n');
+        });
       })
       .subscribe();
 

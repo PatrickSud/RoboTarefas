@@ -4,7 +4,53 @@ const http = require('http')
 const fs = require('fs')
 const path = require('path')
 const { spawn } = require('child_process')
+const util = require('util')
+const { createClient } = require('@supabase/supabase-js')
 const { cleanupOldPrints } = require('./services/storageCleanupService')
+
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_ANON_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)
+
+// ==========================================
+// LOGGER & SUPABASE SYNC
+// ==========================================
+let logBuffer = []
+let flushTimer = null
+
+async function flushLogs() {
+  if (logBuffer.length === 0) return
+  const logsToInsert = logBuffer.splice(0, logBuffer.length)
+  try {
+    const records = logsToInsert.map(msg => ({ message: msg }))
+    await supabase.from('system_logs').insert(records)
+  } catch (err) {
+    originalConsoleError('Erro ao salvar logs no Supabase:', err.message)
+  }
+}
+
+function queueLog(msg) {
+  logBuffer.push(msg)
+  if (!flushTimer) {
+    flushTimer = setTimeout(() => {
+      flushTimer = null
+      flushLogs()
+    }, 2000)
+  }
+}
+
+const originalConsoleLog = console.log
+const originalConsoleError = console.error
+
+function handleLog(text, isError = false) {
+  if (isError) originalConsoleError(text)
+  else originalConsoleLog(text)
+  queueLog(text)
+}
+
+console.log = (...args) => handleLog(util.format(...args), false)
+console.error = (...args) => handleLog(util.format(...args), true)
+// ==========================================
 
 const port = Number(process.env.ROBOT_API_PORT || 3001)
 const token = process.env.ROBOT_API_TOKEN
@@ -75,19 +121,35 @@ function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true', isManua
 
   const child = spawn(process.execPath, ['index.js'], {
     cwd: __dirname,
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, IS_MANUAL_RUN: String(isManual) }
   })
 
-  child.on('exit', code => {
+  child.stdout.on('data', data => {
+    const lines = data.toString().split('\n')
+    lines.forEach(line => {
+      if (line.trim()) handleLog(line.trim(), false)
+    })
+  })
+
+  child.stderr.on('data', data => {
+    const lines = data.toString().split('\n')
+    lines.forEach(line => {
+      if (line.trim()) handleLog(line.trim(), true)
+    })
+  })
+
+  child.on('exit', async code => {
     running = false
     lastExitCode = code
     console.log(`Execução do robô finalizada com código ${code}`)
 
     if (shouldShutdown) {
       console.log('AUTO_SHUTDOWN ativo. Desligando a máquina em 60 segundos...')
+      await flushLogs()
       spawn('shutdown', ['/s', '/t', '60'])
     } else {
+      await flushLogs()
       resetIdleTimer()
     }
   })
