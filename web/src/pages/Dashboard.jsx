@@ -117,6 +117,28 @@ export default function Dashboard() {
     if (!livePolling) setLogsLoading(false);
   }
 
+  async function fetchAwsStatusAndLogs() {
+    try {
+      const res = await fetch('/api/run-robot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'status' }),
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok && data.message) setRunMessage(data.message);
+      setAwsStatus(data.ok ? 'online' : 'offline');
+      setLogs(data.logs || '(Sem logs disponíveis)');
+      setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
+
+      if (data.ok && data.running === false && data.lastExitCode !== null) {
+        setLivePolling(false);
+        fetchLatestResults();
+      }
+    } catch {
+      setAwsStatus('offline');
+    }
+  }
+
   useEffect(() => {
     fetchLatestResults();
     checkAwsStatus();
@@ -139,11 +161,11 @@ export default function Dashboard() {
 
     async function refreshLive() {
       if (cancelled) return;
-      await Promise.all([checkAwsStatus(), fetchLogs(), fetchLatestResults()]);
+      await Promise.all([fetchAwsStatusAndLogs(), fetchLatestResults()]);
     }
 
     refreshLive();
-    const interval = setInterval(refreshLive, 5000);
+    const interval = setInterval(refreshLive, 10000);
 
     return () => {
       cancelled = true;
@@ -153,7 +175,6 @@ export default function Dashboard() {
 
   async function handleRunNow() {
     setRunning(true);
-    setLivePolling(true);
     setLogsOpen(true);
     setRunMessage('Ligando servidor AWS...');
 
@@ -192,6 +213,7 @@ export default function Dashboard() {
       setRunMessage('Servidor online! Iniciando robô...');
       const run = await callFunction('run');
       setRunMessage(run.message || 'Execução iniciada com sucesso.');
+      setLivePolling(true);
       setTimeout(() => setLivePolling(false), 900000);
     } catch (error) {
       setRunMessage(`Erro: ${error.message}`);

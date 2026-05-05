@@ -82,6 +82,49 @@ export default async function handler(req, res) {
       return
     }
 
+    if (action === 'status') {
+      const status = {
+        ok: false,
+        status: 'offline',
+        logs: ''
+      }
+
+      try {
+        const healthResponse = await fetch(
+          `${apiUrl.replace(/\/$/, '')}/health`,
+          {
+            signal: AbortSignal.timeout(5000)
+          }
+        )
+        const healthPayload = await healthResponse.json()
+        Object.assign(status, {
+          ok: Boolean(healthPayload.ok),
+          ...healthPayload
+        })
+      } catch {
+        status.ok = false
+      }
+
+      if (status.ok) {
+        try {
+          const logsResponse = await fetch(
+            `${apiUrl.replace(/\/$/, '')}/logs`,
+            {
+              headers: { Authorization: `Bearer ${apiToken}` },
+              signal: AbortSignal.timeout(8000)
+            }
+          )
+          const logsPayload = await logsResponse.json()
+          status.logs = logsPayload.logs || ''
+        } catch {
+          status.logs = ''
+        }
+      }
+
+      res.status(200).json(status)
+      return
+    }
+
     if (action === 'run') {
       const response = await fetch(`${apiUrl.replace(/\/$/, '')}/run`, {
         method: 'POST',
