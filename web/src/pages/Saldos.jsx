@@ -453,7 +453,7 @@ export default function Saldos() {
                 {' • '}{selectedForWithdrawals.size} de {withdrawalSummaries.length} conta(s)
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 mt-2 sm:mt-0">
               <button onClick={selectAllWithdrawals} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Selecionar todas</button>
               <button onClick={clearWithdrawalSelection} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Limpar</button>
             </div>
@@ -475,25 +475,25 @@ export default function Saldos() {
                   onClick={() => setWithdrawalModalAccount(account.key)}
                   className="w-full text-left p-4 pr-12 transition-colors hover:bg-gray-800/40"
                 >
-                <div className="flex items-center gap-4">
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={event => { event.stopPropagation(); toggleWithdrawalAccount(account.key); }}
-                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); toggleWithdrawalAccount(account.key); } }}
-                    className={`shrink-0 rounded-full transition-colors ${checked ? 'text-red-400' : 'text-gray-600 hover:text-gray-300'}`}
-                    title={checked ? 'Remover do consolidado de saques' : 'Adicionar ao consolidado de saques'}
-                  >
-                    {checked ? <CheckCircle2 size={22} /> : <Circle size={22} />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-gray-100 truncate">{account.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
-                      </div>
-                      <div className="sm:text-right">
-                        <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalNet)}</p>
+                  <div className="flex items-center gap-4">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={event => { event.stopPropagation(); toggleWithdrawalAccount(account.key); }}
+                      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); toggleWithdrawalAccount(account.key); } }}
+                      className={`shrink-0 rounded-full transition-colors ${checked ? 'text-red-400' : 'text-gray-600 hover:text-gray-300'}`}
+                      title={checked ? 'Remover do consolidado de saques' : 'Adicionar ao consolidado de saques'}
+                    >
+                      {checked ? <CheckCircle2 size={22} /> : <Circle size={22} />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-100 truncate">{account.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                        </div>
+                        <div className="sm:text-right">
+                          <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalNet)}</p>
                           <p className="text-xs text-gray-500">
                             Bruto -{formatCurrency(account.withdrawalTotal)}
                             {account.withdrawalFee > 0 ? ` (${account.withdrawalFee}% taxa)` : ''}
@@ -502,13 +502,36 @@ export default function Saldos() {
                             {account.withdrawalCount} saque(s)
                             {account.latestWithdrawal ? ` • último em ${formatDate(account.latestWithdrawal.date)}` : ''}
                           </p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </button>
-              <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }} className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-600 hover:text-gray-300 hover:bg-gray-800" title="Taxa"><Settings size={16} /></span>
-              {isEditingFee && (<div className="px-4 pb-4 flex items-center gap-2" onClick={event => event.stopPropagation()}><label className="text-xs text-gray-400">Taxa %:</label><input type="number" min="0" max="100" step="0.1" defaultValue={account.withdrawalFee} onKeyDown={event => { if (event.key === 'Enter') saveFee(account.key, event.currentTarget.value); if (event.key === 'Escape') setEditingFeeFor(null); }} className="w-20 px-2 py-1 text-sm bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-red-500 focus:outline-none" autoFocus /></div>)}
+                </button>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={event => { event.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
+                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); } }}
+                  className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-600 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+                  title="Configurar taxa de saque"
+                >
+                  <Settings size={16} />
+                </span>
+                {isEditingFee && (
+                  <div className="px-4 pb-4 flex items-center gap-2" onClick={event => event.stopPropagation()}>
+                    <label className="text-xs text-gray-400 shrink-0">Taxa %:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      defaultValue={account.withdrawalFee}
+                      onKeyDown={event => { if (event.key === 'Enter') saveFee(account.key, event.currentTarget.value); if (event.key === 'Escape') setEditingFeeFor(null); }}
+                      className="w-20 px-2 py-1 text-sm bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-red-500 focus:outline-none"
+                      autoFocus
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
