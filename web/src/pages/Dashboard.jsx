@@ -127,11 +127,12 @@ export default function Dashboard() {
       const data = await parseApiResponse(res);
       if (!res.ok && data.message) setRunMessage(data.message);
       setAwsStatus(data.ok ? 'online' : 'offline');
-      setLogs(data.logs || '(Sem logs disponíveis)');
-      setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
+      if (data.logs) {
+        setLogs(data.logs);
+        setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
+      }
 
       if (data.ok && data.running === false && data.lastExitCode !== null) {
-        setLivePolling(false);
         fetchLatestResults();
       }
     } catch {
@@ -141,8 +142,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchLatestResults();
-    checkAwsStatus();
-    fetchLogs();
+    fetchAwsStatusAndLogs();
 
     const channel = supabase
       .channel('dashboard-realtime')
@@ -155,17 +155,15 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!livePolling) return;
-
     let cancelled = false;
 
     async function refreshLive() {
       if (cancelled) return;
-      await Promise.all([fetchAwsStatusAndLogs(), fetchLatestResults()]);
+      await fetchAwsStatusAndLogs();
+      if (livePolling) await fetchLatestResults();
     }
 
-    refreshLive();
-    const interval = setInterval(refreshLive, 20000);
+    const interval = setInterval(refreshLive, livePolling ? 20000 : 60000);
 
     return () => {
       cancelled = true;
