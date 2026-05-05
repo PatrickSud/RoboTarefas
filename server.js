@@ -15,6 +15,7 @@ let running = false
 let lastRun = null
 let lastExitCode = null
 let idleTimer = null
+let autoRunTimer = null
 let shutdownEnabled = process.env.AUTO_SHUTDOWN === 'true'
 
 function resetIdleTimer() {
@@ -140,6 +141,11 @@ const server = http.createServer(async (req, res) => {
         : process.env.AUTO_SHUTDOWN === 'true'
 
     if (idleTimer) clearTimeout(idleTimer)
+    if (autoRunTimer) {
+      clearTimeout(autoRunTimer)
+      autoRunTimer = null
+    }
+    
     await runCleanup()
     runRobot(shouldShutdown, isManual === true)
     sendJson(res, 202, { ok: true, message: 'Execução iniciada.', lastRun })
@@ -188,4 +194,12 @@ server.listen(port, () => {
   runCleanup()
   resetIdleTimer()
   setInterval(runCleanup, 24 * 60 * 60 * 1000)
+  
+  // Inicia automaticamente o robô se nenhuma requisição /run for feita em 30 segundos
+  autoRunTimer = setTimeout(() => {
+    if (!running) {
+      console.log('Iniciando robô automaticamente após boot...')
+      runRobot(process.env.AUTO_SHUTDOWN === 'true', false)
+    }
+  }, 30000)
 })
