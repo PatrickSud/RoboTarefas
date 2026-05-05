@@ -469,13 +469,13 @@ export default function Saldos() {
         </div>
 
         {/* Total Saques */}
-        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-5 py-4 flex flex-col justify-between">
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl px-5 py-4 flex flex-col justify-between">
           <div>
-            <p className="text-xs text-red-300 font-semibold uppercase tracking-wider">Saques Consolidados (Líquido)</p>
+            <p className="text-xs text-emerald-300 font-semibold uppercase tracking-wider">Saques Consolidados (Líquido)</p>
             <p className="text-3xl font-bold text-white mt-1">{formatCurrency(consolidatedWithdrawalsNet)}</p>
           </div>
-          <div className="flex items-center justify-between mt-4 pt-2 border-t border-red-500/20">
-            <p className="text-xs text-red-200/60">
+          <div className="flex items-center justify-between mt-4 pt-2 border-t border-emerald-500/20">
+            <p className="text-xs text-emerald-200/60">
               Bruto {formatCurrency(consolidatedWithdrawalsTotal)} • {selectedForWithdrawals.size} de {withdrawalSummaries.length}
             </p>
             <div className="flex gap-3">
@@ -594,17 +594,17 @@ export default function Saldos() {
                 {hasWithdrawals ? (
                   <div className="relative">
                     <div 
-                      className={`relative p-2.5 sm:p-3 rounded-xl border cursor-pointer transition-colors ${checkedWithdrawal ? 'bg-red-500/10 border-red-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
+                      className={`relative p-2.5 sm:p-3 rounded-xl border cursor-pointer transition-colors ${checkedWithdrawal ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-gray-800/30 border-transparent hover:bg-gray-800/50'}`}
                       onClick={() => toggleWithdrawalAccount(account.key)}
                     >
                       <div className="flex items-start gap-2.5">
-                        <span className={`mt-0.5 shrink-0 ${checkedWithdrawal ? 'text-red-400' : 'text-gray-600'}`}>
+                        <span className={`mt-0.5 shrink-0 ${checkedWithdrawal ? 'text-emerald-400' : 'text-gray-600'}`}>
                           {checkedWithdrawal ? <CheckCircle2 size={18} /> : <Circle size={18} />}
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Saques ({ws.withdrawalCount})</p>
-                          <p className="text-base sm:text-lg font-bold text-red-400 leading-none truncate mb-1">-{formatCurrency(ws.withdrawalNet)}</p>
-                          <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">Bruto -{formatCurrency(ws.withdrawalTotal)}</p>
+                          <p className="text-base sm:text-lg font-bold text-emerald-400 leading-none truncate mb-1">+{formatCurrency(ws.withdrawalNet)}</p>
+                          <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">Bruto +{formatCurrency(ws.withdrawalTotal)}</p>
                         </div>
                       </div>
                     </div>
@@ -703,7 +703,7 @@ export default function Saldos() {
           <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-800 flex items-start justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <ArrowDownCircle size={18} className="text-red-400 shrink-0" />
+                <ArrowDownCircle size={18} className="text-emerald-400 shrink-0" />
                 <div className="min-w-0">
                   <h3 className="font-semibold text-white truncate">Histórico de saques</h3>
                   <p className="text-xs text-gray-500 truncate">
