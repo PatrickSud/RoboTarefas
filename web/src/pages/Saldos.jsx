@@ -175,7 +175,7 @@ export default function Saldos() {
       const nameB = String(b.name || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [accounts, results]);
+  }, [accounts, results, exchangeConfigs]);
 
   // Inicializamos os ghosts items caso eles não existam no accounts table
   useEffect(() => {
@@ -322,9 +322,9 @@ export default function Saldos() {
     withdrawalsByAccount.get(withdrawalModalAccount) || []
   ), [withdrawalsByAccount, withdrawalModalAccount]);
 
-  function updateAccountField(accountKey, fields) {
-    if (accountKey.startsWith('account:')) {
-      const id = accountKey.split(':')[1];
+  function updateAccountField(key, fields) {
+    if (key.startsWith('account:')) {
+      const id = key.replace('account:', '');
       supabase.from('accounts').update(fields).eq('id', id).then();
     }
   }
@@ -354,49 +354,51 @@ export default function Saldos() {
   function selectAll() {
     setSelectedForTotal(new Set(summaries.map(account => account.key)));
     Promise.all(summaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_total: true }).eq('id', s.key.split(':')[1]) : Promise.resolve()
+      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_total: true }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
     ));
   }
 
   function clearSelection() {
     setSelectedForTotal(new Set());
     Promise.all(summaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_total: false }).eq('id', s.key.split(':')[1]) : Promise.resolve()
+      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_total: false }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
     ));
   }
 
   function selectAllWithdrawals() {
     setSelectedForWithdrawals(new Set(withdrawalSummaries.map(account => account.key)));
     Promise.all(withdrawalSummaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_withdrawals: true }).eq('id', s.key.split(':')[1]) : Promise.resolve()
+      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_withdrawals: true }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
     ));
   }
 
   function clearWithdrawalSelection() {
     setSelectedForWithdrawals(new Set());
     Promise.all(withdrawalSummaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_withdrawals: false }).eq('id', s.key.split(':')[1]) : Promise.resolve()
+      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_withdrawals: false }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
     ));
   }
 
-  function saveConfig(accountKey, feeValue, symbolValue, rateValue) {
+  function saveConfig(key, feeValue, symbolValue, rateValue) {
     const rawFee = parseFloat(feeValue);
     const fee = Number.isNaN(rawFee) || rawFee < 0 ? 0 : rawFee > 100 ? 100 : rawFee;
-    setWithdrawalFees(prev => ({ ...prev, [accountKey]: fee }));
+    setWithdrawalFees(prev => ({ ...prev, [key]: fee }));
 
     const rawRate = parseFloat(rateValue);
     const rate = Number.isNaN(rawRate) || rawRate <= 0 ? 1 : rawRate;
     const symbol = String(symbolValue || '').trim();
     
-    setExchangeConfigs(prev => ({ ...prev, [accountKey]: { symbol, rate } }));
+    setExchangeConfigs(prev => ({ ...prev, [key]: { symbol, rate } }));
 
-    if (accountKey.startsWith('account:')) {
-      const id = accountKey.split(':')[1];
+    if (key.startsWith('account:')) {
+      const id = key.replace('account:', '');
       supabase.from('accounts').update({
         withdrawal_fee: fee,
         currency_symbol: symbol,
         exchange_rate: rate
-      }).eq('id', id).then();
+      }).eq('id', id).then(({ error }) => {
+        if (error) console.error('Erro ao salvar config:', error.message);
+      });
     }
 
     setEditingFeeFor(null);
