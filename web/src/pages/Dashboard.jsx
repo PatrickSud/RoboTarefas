@@ -26,6 +26,7 @@ export default function Dashboard() {
   const [logs, setLogs] = useState('');
   const [logsOpen, setLogsOpen] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [livePolling, setLivePolling] = useState(false);
   const [modalUrl, setModalUrl] = useState(null);
   const logsRef = useRef(null);
 
@@ -83,7 +84,7 @@ export default function Dashboard() {
   }
 
   async function fetchLogs() {
-    setLogsLoading(true);
+    if (!livePolling) setLogsLoading(true);
     try {
       const res = await fetch('/.netlify/functions/run-robot', {
         method: 'POST', body: JSON.stringify({ action: 'logs' }),
@@ -92,7 +93,7 @@ export default function Dashboard() {
       setLogs(data.logs || '(Sem logs disponíveis)');
       setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
     } catch { setLogs('(Erro ao buscar logs)'); }
-    setLogsLoading(false);
+    if (!livePolling) setLogsLoading(false);
   }
 
   useEffect(() => {
@@ -110,8 +111,29 @@ export default function Dashboard() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  useEffect(() => {
+    if (!livePolling) return;
+
+    let cancelled = false;
+
+    async function refreshLive() {
+      if (cancelled) return;
+      await Promise.all([checkAwsStatus(), fetchLogs(), fetchLatestResults()]);
+    }
+
+    refreshLive();
+    const interval = setInterval(refreshLive, 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [livePolling]);
+
   async function handleRunNow() {
     setRunning(true);
+    setLivePolling(true);
+    setLogsOpen(true);
     setRunMessage('Ligando servidor AWS...');
 
     const callFunction = async (action) => {
@@ -146,8 +168,10 @@ export default function Dashboard() {
       setRunMessage('Servidor online! Iniciando robô...');
       const run = await callFunction('run');
       setRunMessage(run.message || 'Execução iniciada com sucesso.');
+      setTimeout(() => setLivePolling(false), 900000);
     } catch (error) {
       setRunMessage(`Erro: ${error.message}`);
+      setLivePolling(false);
     } finally {
       setRunning(false);
     }
