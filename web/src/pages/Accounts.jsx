@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Copy } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -375,17 +375,21 @@ function AccountForm({ account, onClose, onSaved }) {
   }
 
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 mb-6">
-      <h3 className="font-semibold text-white mb-4">
-        {account ? 'Editar Conta' : 'Nova Conta'}
-      </h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto relative" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-300">
+          <X size={20} />
+        </button>
+        <h3 className="font-semibold text-white mb-4">
+          {account ? 'Editar Conta' : 'Nova Conta'}
+        </h3>
       <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input label="Nome" name="name" value={form.name} onChange={handleChange} required />
         <Input label="Plataforma" name="platform" value={form.platform} onChange={handleChange} required />
-        <Input label="Telefone" name="phone" value={form.phone} onChange={handleChange} required />
-        <Input label="WhatsApp" name="whatsapp_phone" value={form.whatsapp_phone} onChange={handleChange} />
+        <Input label="Telefone" name="phone" value={form.phone} onChange={handleChange} required copyable />
+        <Input label="WhatsApp" name="whatsapp_phone" value={form.whatsapp_phone} onChange={handleChange} copyable />
         <Input label="E-mail" name="email" type="email" value={form.email} onChange={handleChange} />
-        <Input label="Senha da Plataforma" name="password" value={form.password} onChange={handleChange} required />
+        <Input label="Senha da Plataforma" name="password" value={form.password} onChange={handleChange} required copyable />
 
         <div className="sm:col-span-2">
           <label className="block text-sm font-medium text-gray-400 mb-2">Agendamentos (Horários de Brasília)</label>
@@ -432,18 +436,33 @@ function AccountForm({ account, onClose, onSaved }) {
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 }
 
-function Input({ label, ...props }) {
+function Input({ label, copyable, ...props }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-400 mb-1">{label}</label>
-      <input
-        {...props}
-        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-gray-600"
-      />
+      <div className="flex gap-2">
+        <input
+          {...props}
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-gray-600"
+        />
+        {copyable && props.value && (
+          <button 
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(props.value);
+            }}
+            className="p-2 bg-gray-800 border border-gray-700 text-gray-400 rounded-lg hover:text-white hover:bg-gray-700 transition-colors shrink-0"
+            title="Copiar"
+          >
+            <Copy size={16} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
