@@ -433,7 +433,7 @@ export default function Saldos() {
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-100 truncate">{account.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                          <p className="text-xs truncate" style={{ color: getPlatformColor(account.platform) }}>{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
                         </div>
                         <div className="sm:text-right">
                           <p className="text-lg font-bold text-white">{formatCurrency(account.balanceValue)}</p>
@@ -505,7 +505,7 @@ export default function Saldos() {
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-100 truncate">{account.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                          <p className="text-xs truncate" style={{ color: getPlatformColor(account.platform) }}>{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
                         </div>
                         <div className="sm:text-right">
                           <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalNet)}</p>
