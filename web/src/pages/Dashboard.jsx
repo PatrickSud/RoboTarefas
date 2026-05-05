@@ -133,6 +133,7 @@ export default function Dashboard() {
       }
 
       if (data.ok && data.running === false && data.lastExitCode !== null) {
+        setLivePolling(false);
         fetchLatestResults();
       }
     } catch {
@@ -155,15 +156,17 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (!livePolling) return;
+
     let cancelled = false;
 
     async function refreshLive() {
       if (cancelled) return;
-      await fetchAwsStatusAndLogs();
-      if (livePolling) await fetchLatestResults();
+      await Promise.all([fetchAwsStatusAndLogs(), fetchLatestResults()]);
     }
 
-    const interval = setInterval(refreshLive, livePolling ? 20000 : 60000);
+    refreshLive();
+    const interval = setInterval(refreshLive, 20000);
 
     return () => {
       cancelled = true;
