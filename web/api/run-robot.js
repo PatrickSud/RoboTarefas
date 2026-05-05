@@ -1,12 +1,32 @@
 const { EC2Client, StartInstancesCommand } = require('@aws-sdk/client-ec2')
 
-const ec2 = new EC2Client({
-  region: process.env.MY_AWS_REGION || 'sa-east-1',
-  credentials: {
+function getRequiredEnv() {
+  const required = [
+    'ROBOT_API_URL',
+    'ROBOT_API_TOKEN',
+    'AWS_INSTANCE_ID',
+    'MY_AWS_ACCESS_KEY_ID',
+    'MY_AWS_SECRET_ACCESS_KEY'
+  ]
+  const missing = required.filter(key => !process.env[key])
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      message: `Configurações incompletas na Vercel: ${missing.join(', ')}`
+    }
+  }
+
+  return {
+    ok: true,
+    apiUrl: process.env.ROBOT_API_URL,
+    apiToken: process.env.ROBOT_API_TOKEN,
+    instanceId: process.env.AWS_INSTANCE_ID,
+    region: process.env.MY_AWS_REGION || 'sa-east-1',
     accessKeyId: process.env.MY_AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.MY_AWS_SECRET_ACCESS_KEY
   }
-})
+}
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -15,17 +35,24 @@ module.exports = async function handler(req, res) {
   }
 
   const { action, autoShutdown } = req.body || {}
-  const apiUrl = process.env.ROBOT_API_URL
-  const apiToken = process.env.ROBOT_API_TOKEN
-  const instanceId = process.env.AWS_INSTANCE_ID
+  const env = getRequiredEnv()
 
-  if (!apiUrl || !apiToken || !instanceId) {
-    res.status(500).json({ ok: false, message: 'Configurações incompletas.' })
+  if (!env.ok) {
+    res.status(500).json(env)
     return
   }
 
+  const { apiUrl, apiToken, instanceId } = env
+
   try {
     if (action === 'start') {
+      const ec2 = new EC2Client({
+        region: env.region,
+        credentials: {
+          accessKeyId: env.accessKeyId,
+          secretAccessKey: env.secretAccessKey
+        }
+      })
       await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }))
       res.status(200).json({ ok: true, status: 'starting' })
       return

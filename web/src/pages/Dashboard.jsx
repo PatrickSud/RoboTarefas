@@ -79,6 +79,7 @@ export default function Dashboard() {
         method: 'POST', body: JSON.stringify({ action: 'health' }),
       });
       const data = await res.json();
+      if (!res.ok && data.message) setRunMessage(data.message);
       setAwsStatus(data.ok ? 'online' : 'offline');
     } catch { setAwsStatus('offline'); }
   }
@@ -90,6 +91,7 @@ export default function Dashboard() {
         method: 'POST', body: JSON.stringify({ action: 'logs' }),
       });
       const data = await res.json();
+      if (!res.ok && data.message) setRunMessage(data.message);
       setLogs(data.logs || '(Sem logs disponíveis)');
       setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
     } catch { setLogs('(Erro ao buscar logs)'); }
@@ -141,7 +143,9 @@ export default function Dashboard() {
         method: 'POST',
         body: JSON.stringify({ action, autoShutdown }),
       });
-      return res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `Erro HTTP ${res.status}`);
+      return data;
     };
 
     try {
