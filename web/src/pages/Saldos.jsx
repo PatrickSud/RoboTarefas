@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Trash2, Wallet, X } from 'lucide-react';
+import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Settings, Trash2, Wallet, X } from 'lucide-react';
 
 const SELECTION_STORAGE_KEY = 'saldos_selected_accounts';
 const WITHDRAWAL_SELECTION_STORAGE_KEY = 'saldos_selected_withdrawal_accounts';
+const WITHDRAWAL_FEES_STORAGE_KEY = 'saldos_withdrawal_fees';
 
 function parseBalance(value) {
   const normalized = String(value ?? '0')
@@ -61,6 +62,14 @@ export default function Saldos() {
   const [selectedForWithdrawals, setSelectedForWithdrawals] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  const [withdrawalFees, setWithdrawalFees] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(WITHDRAWAL_FEES_STORAGE_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const [editingFeeFor, setEditingFeeFor] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -236,18 +245,29 @@ export default function Saldos() {
   const withdrawalSummaries = useMemo(() => (
     summaries.map(account => {
       const withdrawals = withdrawalsByAccount.get(account.key) || [];
+      const gross = withdrawals.reduce((sum, withdrawal) => sum + withdrawal.amount, 0);
+      const fee = withdrawalFees[account.key] ?? 0;
+      const net = gross * (1 - fee / 100);
       return {
         ...account,
         withdrawalCount: withdrawals.length,
-        withdrawalTotal: withdrawals.reduce((sum, withdrawal) => sum + withdrawal.amount, 0),
+        withdrawalTotal: gross,
+        withdrawalNet: net,
+        withdrawalFee: fee,
         latestWithdrawal: withdrawals[0] || null,
       };
     }).filter(account => account.withdrawalCount > 0)
-  ), [summaries, withdrawalsByAccount]);
+  ), [summaries, withdrawalsByAccount, withdrawalFees]);
 
   const consolidatedWithdrawalsTotal = useMemo(() => (
     withdrawalSummaries.reduce((sum, account) => (
       selectedForWithdrawals.has(account.key) ? sum + account.withdrawalTotal : sum
+    ), 0)
+  ), [withdrawalSummaries, selectedForWithdrawals]);
+
+  const consolidatedWithdrawalsNet = useMemo(() => (
+    withdrawalSummaries.reduce((sum, account) => (
+      selectedForWithdrawals.has(account.key) ? sum + account.withdrawalNet : sum
     ), 0)
   ), [withdrawalSummaries, selectedForWithdrawals]);
 
@@ -287,6 +307,17 @@ export default function Saldos() {
 
   function clearWithdrawalSelection() {
     setSelectedForWithdrawals(new Set());
+  }
+
+  function saveFee(accountKey, value) {
+    const raw = parseFloat(value);
+    const fee = Number.isNaN(raw) || raw < 0 ? 0 : raw > 100 ? 100 : raw;
+    setWithdrawalFees(prev => {
+      const next = { ...prev, [accountKey]: fee };
+      localStorage.setItem(WITHDRAWAL_FEES_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+    setEditingFeeFor(null);
   }
 
   async function deleteHistoryRow(row) {
@@ -416,8 +447,11 @@ export default function Saldos() {
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
               <p className="text-xs text-red-300">Saques consolidados selecionados</p>
-              <p className="text-2xl font-bold text-white mt-1">{formatCurrency(consolidatedWithdrawalsTotal)}</p>
-              <p className="text-xs text-gray-500 mt-1">{selectedForWithdrawals.size} de {withdrawalSummaries.length} conta(s)</p>
+              <p className="text-2xl font-bold text-white mt-1">{formatCurrency(consolidatedWithdrawalsNet)}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Bruto {formatCurrency(consolidatedWithdrawalsTotal)}
+                {' • '}{selectedForWithdrawals.size} de {withdrawalSummaries.length} conta(s)
+              </p>
             </div>
             <div className="flex gap-2">
               <button onClick={selectAllWithdrawals} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-300 transition-colors">Selecionar todas</button>
@@ -434,12 +468,13 @@ export default function Saldos() {
             </div>
           ) : withdrawalSummaries.map(account => {
             const checked = selectedForWithdrawals.has(account.key);
+            const isEditingFee = editingFeeFor === account.key;
             return (
-              <button
-                key={account.key}
-                onClick={() => setWithdrawalModalAccount(account.key)}
-                className="w-full text-left p-4 transition-colors hover:bg-gray-800/40"
-              >
+              <div key={account.key} className="relative">
+                <button
+                  onClick={() => setWithdrawalModalAccount(account.key)}
+                  className="w-full text-left p-4 pr-12 transition-colors hover:bg-gray-800/40"
+                >
                 <div className="flex items-center gap-4">
                   <span
                     role="button"
@@ -458,16 +493,23 @@ export default function Saldos() {
                         <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
                       </div>
                       <div className="sm:text-right">
-                        <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalTotal)}</p>
-                        <p className="text-xs text-gray-500">
-                          {account.withdrawalCount} saque(s)
-                          {account.latestWithdrawal ? ` • último em ${formatDate(account.latestWithdrawal.date)}` : ''}
-                        </p>
+                        <p className="text-lg font-bold text-red-400">-{formatCurrency(account.withdrawalNet)}</p>
+                          <p className="text-xs text-gray-500">
+                            Bruto -{formatCurrency(account.withdrawalTotal)}
+                            {account.withdrawalFee > 0 ? ` (${account.withdrawalFee}% taxa)` : ''}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-0.5">
+                            {account.withdrawalCount} saque(s)
+                            {account.latestWithdrawal ? ` • último em ${formatDate(account.latestWithdrawal.date)}` : ''}
+                          </p>
                       </div>
                     </div>
                   </div>
                 </div>
               </button>
+              <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }} className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-600 hover:text-gray-300 hover:bg-gray-800" title="Taxa"><Settings size={16} /></span>
+              {isEditingFee && (<div className="px-4 pb-4 flex items-center gap-2" onClick={event => event.stopPropagation()}><label className="text-xs text-gray-400">Taxa %:</label><input type="number" min="0" max="100" step="0.1" defaultValue={account.withdrawalFee} onKeyDown={event => { if (event.key === 'Enter') saveFee(account.key, event.currentTarget.value); if (event.key === 'Escape') setEditingFeeFor(null); }} className="w-20 px-2 py-1 text-sm bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-red-500 focus:outline-none" autoFocus /></div>)}
+              </div>
             );
           })}
         </div>
