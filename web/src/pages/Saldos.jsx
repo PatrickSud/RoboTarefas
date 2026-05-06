@@ -674,10 +674,11 @@ export default function Saldos() {
                       <button
                         type="button"
                         onClick={() => addDeposit(account.key, depositDraft.amount, depositDraft.date)}
-                        className="p-1 rounded-lg text-emerald-400 hover:bg-emerald-500/10"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20"
                         title="Adicionar depósito"
                       >
                         <Plus size={14} />
+                        Incluir
                       </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
