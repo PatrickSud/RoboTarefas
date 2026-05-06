@@ -109,6 +109,15 @@ function unauthorizedMessage(req) {
   return 'Não autorizado: ROBOT_API_TOKEN da AWS é diferente do token configurado no Netlify.'
 }
 
+function logSessionSeparator(label) {
+  const timestamp = new Date().toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo'
+  })
+  console.log('============================================================')
+  console.log(`${label} - ${timestamp}`)
+  console.log('============================================================')
+}
+
 function runRobot(
   shouldShutdown = process.env.AUTO_SHUTDOWN === 'true',
   isManual = false
@@ -117,6 +126,7 @@ function runRobot(
   running = true
   lastRun = new Date().toISOString()
   lastExitCode = null
+  logSessionSeparator('INÍCIO DA SESSÃO')
   console.log(
     `Desligamento automático: ${shouldShutdown ? 'ATIVO' : 'INATIVO'} | Execução Manual: ${isManual}`
   )
@@ -145,6 +155,7 @@ function runRobot(
     running = false
     lastExitCode = code
     console.log(`Execução do robô finalizada com código ${code}`)
+    logSessionSeparator('FIM DA SESSÃO')
 
     if (shouldShutdown) {
       console.log('AUTO_SHUTDOWN ativo. Desligando a máquina em 60 segundos...')

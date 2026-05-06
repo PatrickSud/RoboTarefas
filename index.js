@@ -258,6 +258,7 @@ process.on('uncaughtException', async err => {
 // ==========================================
 async function executarAutomacao() {
   let relatorioFinal = 'Relatório de Saldos das Contas:\n\n'
+  const linhasRelatorioPorPlataforma = {}
   const dataHoje = new Date().toLocaleDateString('pt-BR')
   const saldosHoje = {}
 
@@ -1338,7 +1339,12 @@ async function executarAutomacao() {
           console.log(`Saldo capturado: ${carteiraReceita}`)
         }
 
-        relatorioFinal += `${conta.nome} - ${conta.plataforma} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}\n`
+        if (!linhasRelatorioPorPlataforma[conta.plataforma]) {
+          linhasRelatorioPorPlataforma[conta.plataforma] = []
+        }
+        linhasRelatorioPorPlataforma[conta.plataforma].push(
+          `${conta.nome} - Tarefas: ${contadorTarefas} | Saldo: ${carteiraReceita}`
+        )
         if (carteiraReceita && carteiraReceita !== '0.00')
           saldosHoje[conta.nome] = {
             saldo: carteiraReceita,
@@ -1418,7 +1424,12 @@ async function executarAutomacao() {
             `Falha ao processar a conta de ${conta.nome} (${conta.telefone}):`,
             erro.message
           )
-          relatorioFinal += `${conta.nome}: ERRO - ${erro.message}\n`
+          if (!linhasRelatorioPorPlataforma[conta.plataforma]) {
+            linhasRelatorioPorPlataforma[conta.plataforma] = []
+          }
+          linhasRelatorioPorPlataforma[conta.plataforma].push(
+            `${conta.nome}: ERRO - ${erro.message}`
+          )
 
           const caminhoPrint = `erro_${conta.nome}.png`
           try {
@@ -1494,6 +1505,18 @@ async function executarAutomacao() {
   }
 
   await browser.close()
+
+  const plataformasRelatorio = Object.keys(linhasRelatorioPorPlataforma).sort(
+    (a, b) => a.localeCompare(b, 'pt-BR')
+  )
+  if (plataformasRelatorio.length > 0) {
+    relatorioFinal = 'Relatório de Saldos das Contas:\n\n'
+    for (const plataforma of plataformasRelatorio) {
+      relatorioFinal += `*${plataforma || 'Sem plataforma'}*\n`
+      relatorioFinal += linhasRelatorioPorPlataforma[plataforma].join('\n')
+      relatorioFinal += '\n\n'
+    }
+  }
 
   // ==========================================
   // 5.5. RELATÓRIO COMPARATIVO

@@ -48,6 +48,19 @@ function SortableRow({ account, onToggleActive, onToggleTestMode, onEdit, onDele
         </button>
       </td>
       <td className="px-4 py-3">
+        <div className="flex flex-wrap gap-1 max-w-48">
+          {(account.schedules || []).length > 0 ? (
+            [...account.schedules].sort((a, b) => a - b).map(hour => (
+              <span key={hour} className="inline-flex items-center rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-300">
+                {String(hour).padStart(2, '0')}:00
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-gray-600">Sem horário</span>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-3">
         <button onClick={() => onToggleActive(account)} title={account.active ? 'Desativar' : 'Ativar'}>
           {account.active ? (
             <ToggleRight size={24} className="text-green-500" />
@@ -296,6 +309,7 @@ export default function Accounts() {
                 <SortableHeader label="Plataforma" colKey="platform" sortConfig={sortConfig} onSort={handleSort} />
                 <SortableHeader label="Telefone" colKey="phone" sortConfig={sortConfig} onSort={handleSort} />
                 <th className="px-4 py-3 font-medium text-gray-400" title="Modo Teste">Teste</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Horários</th>
                 <th className="px-4 py-3 font-medium text-gray-400">Status</th>
                 <th className="px-4 py-3 font-medium text-gray-400 text-right">Ações</th>
               </tr>
@@ -304,7 +318,7 @@ export default function Accounts() {
               <SortableContext items={displayAccounts.map(a => a.id)} strategy={verticalListSortingStrategy}>
                 <tbody className="divide-y divide-gray-800">
                   {displayAccounts.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-600 text-sm">Nenhuma conta encontrada.</td></tr>
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600 text-sm">Nenhuma conta encontrada.</td></tr>
                   ) : displayAccounts.map(account => (
                     <SortableRow
                       key={account.id}

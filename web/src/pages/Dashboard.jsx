@@ -15,6 +15,27 @@ function PrintModal({ url, onClose }) {
   );
 }
 
+function LogsModal({ logs, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+          <div className="flex items-center gap-2">
+            <Terminal size={16} className="text-green-400" />
+            <h3 className="font-semibold text-white">Log completo disponível</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300">
+            <X size={20} />
+          </button>
+        </div>
+        <pre className="text-xs text-green-300 font-mono bg-gray-950 p-4 overflow-auto max-h-[75vh] whitespace-pre-wrap leading-5">
+          {logs || '(Sem logs)'}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 async function parseApiResponse(response) {
   const text = await response.text();
 
@@ -42,6 +63,7 @@ export default function Dashboard() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [livePolling, setLivePolling] = useState(false);
   const [modalUrl, setModalUrl] = useState(null);
+  const [logsModalOpen, setLogsModalOpen] = useState(false);
   const logsRef = useRef(null);
 
 
@@ -179,7 +201,7 @@ export default function Dashboard() {
 
     async function refreshLive() {
       if (cancelled) return;
-      await Promise.all([fetchAwsStatusAndLogs(), fetchLatestResults()]);
+      await Promise.all([fetchAwsStatusAndLogs(), fetchLatestResults(), fetchLogs()]);
     }
 
     refreshLive();
@@ -190,6 +212,13 @@ export default function Dashboard() {
       clearInterval(interval);
     };
   }, [livePolling]);
+
+  useEffect(() => {
+    if (!logsOpen || livePolling) return;
+
+    const interval = setInterval(fetchLogs, 15000);
+    return () => clearInterval(interval);
+  }, [logsOpen, livePolling]);
 
   async function handleRunNow() {
     setRunning(true);
@@ -253,6 +282,11 @@ export default function Dashboard() {
 
   const successCount = results.filter(r => r.status === 'success').length;
   const errorCount = results.filter(r => r.status === 'error').length;
+  const logsLines = logs ? logs.split('\n') : [];
+  const latestSessionStart = logsLines.findLastIndex(line => line.includes('INÍCIO DA SESSÃO'));
+  const visibleLogs = latestSessionStart >= 0
+    ? logsLines.slice(latestSessionStart).join('\n')
+    : logsLines.slice(-80).join('\n');
 
   async function toggleAutoShutdown() {
     const newValue = !autoShutdown;
@@ -274,6 +308,7 @@ export default function Dashboard() {
   return (
     <div>
       {modalUrl && <PrintModal url={modalUrl} onClose={() => setModalUrl(null)} />}
+      {logsModalOpen && <LogsModal logs={logs} onClose={() => setLogsModalOpen(false)} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 md:mb-6">
         <div>
@@ -374,10 +409,16 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             {logsOpen && (
-              <button onClick={e => { e.stopPropagation(); fetchLogs(); }}
-                className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
-                <RefreshCw size={12} /> Atualizar
-              </button>
+              <>
+                <button onClick={e => { e.stopPropagation(); setLogsModalOpen(true); }}
+                  className="text-xs text-gray-500 hover:text-gray-300">
+                  Ver completo
+                </button>
+                <button onClick={e => { e.stopPropagation(); fetchLogs(); }}
+                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                  <RefreshCw size={12} /> Atualizar
+                </button>
+              </>
             )}
             {logsOpen ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
           </div>
@@ -393,7 +434,7 @@ export default function Dashboard() {
                 ref={logsRef}
                 className="text-xs text-green-300 font-mono bg-gray-950 p-4 overflow-auto max-h-72 whitespace-pre-wrap leading-5"
               >
-                {logs || '(Sem logs)'}
+                {visibleLogs || '(Sem logs)'}
               </pre>
             )}
           </div>
