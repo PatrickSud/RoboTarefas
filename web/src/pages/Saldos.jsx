@@ -252,6 +252,7 @@ export default function Saldos() {
   const selectedHistory = useMemo(() => (
     dedupeBalanceHistory(results.filter(result => resultMatchesSummary(result, modalSummary)))
       .sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at))
+      .slice(0, 30)
   ), [results, modalSummary]);
 
   const withdrawalsByAccount = useMemo(() => {
