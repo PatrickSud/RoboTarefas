@@ -17,6 +17,9 @@ create table if not exists public.accounts (
 alter table public.accounts
     add column if not exists local_key text;
 
+alter table public.accounts
+    add column if not exists deposit_entries jsonb not null default '[]'::jsonb;
+
 create table if not exists public.account_run_results (
     id uuid primary key default gen_random_uuid(),
     account_id uuid references public.accounts(id) on delete set null,

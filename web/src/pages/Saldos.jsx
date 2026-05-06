@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Settings, Trash2, Wallet, X } from 'lucide-react';
+import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Plus, Settings, Trash2, Wallet, X } from 'lucide-react';
 
 const COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6', '#60a5fa', '#a78bfa', '#facc15'];
 
@@ -42,7 +42,17 @@ function resultKey(result) {
   return `result:${normalizeKey(result.account_name)}|${normalizeKey(result.platform)}|${normalizeKey(result.phone)}`;
 }
 
-
+function normalizeDeposits(entries) {
+  return Array.isArray(entries)
+    ? entries
+        .map(entry => ({
+          id: entry.id || `${Date.now()}-${Math.random()}`,
+          amount: Number(entry.amount) || 0,
+          date: entry.date || new Date().toISOString().slice(0, 10),
+        }))
+        .filter(entry => entry.amount > 0)
+    : [];
+}
 
 function platformKey(platform) {
   return normalizeKey(platform || 'Sem plataforma');
@@ -60,6 +70,7 @@ export default function Saldos() {
   const [monthlyWithdrawals, setMonthlyWithdrawals] = useState([]);
   const [withdrawalFees, setWithdrawalFees] = useState({});
   const [exchangeConfigs, setExchangeConfigs] = useState({});
+  const [depositEntries, setDepositEntries] = useState({});
   const [editingFeeFor, setEditingFeeFor] = useState(null);
 
   useEffect(() => {
@@ -67,7 +78,7 @@ export default function Saldos() {
       const [{ data: accountsData }, { data: resultsData }, { data: monthlyData }] = await Promise.all([
         supabase
           .from('accounts')
-          .select('id,name,platform,phone,active,sort_order,selected_for_total,selected_for_withdrawals,withdrawal_fee,currency_symbol,exchange_rate')
+          .select('id,name,platform,phone,active,sort_order,selected_for_total,selected_for_withdrawals,withdrawal_fee,currency_symbol,exchange_rate,deposit_entries')
           .order('sort_order', { ascending: true, nullsFirst: false }),
         supabase
           .from('account_run_results')
@@ -85,6 +96,7 @@ export default function Saldos() {
       const accountsArray = accountsData || [];
       const fees = {};
       const configs = {};
+      const deposits = {};
       const selTotal = [];
       const selWith = [];
 
@@ -92,6 +104,7 @@ export default function Saldos() {
         const key = accountKey(acc);
         fees[key] = acc.withdrawal_fee || 0;
         configs[key] = { symbol: acc.currency_symbol || '', rate: acc.exchange_rate || 1 };
+        deposits[key] = normalizeDeposits(acc.deposit_entries);
         
         if (acc.selected_for_total !== false) selTotal.push(key);
         if (acc.selected_for_withdrawals !== false) selWith.push(key);
@@ -99,6 +112,7 @@ export default function Saldos() {
 
       setWithdrawalFees(fees);
       setExchangeConfigs(configs);
+      setDepositEntries(deposits);
       setSelectedForTotal(new Set(selTotal));
       setSelectedForWithdrawals(new Set(selWith));
 
@@ -148,6 +162,7 @@ export default function Saldos() {
         balanceValue,
         currencySymbol: ex.symbol,
         exchangeRate: ex.rate || 1,
+        deposits: depositEntries[key] || [],
       };
     });
 
@@ -171,6 +186,7 @@ export default function Saldos() {
           balanceValue,
           currencySymbol: ex.symbol,
           exchangeRate: ex.rate || 1,
+          deposits: depositEntries[key] || [],
         });
       }
     }
@@ -184,7 +200,7 @@ export default function Saldos() {
       const nameB = String(b.name || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [accounts, results, exchangeConfigs]);
+  }, [accounts, results, exchangeConfigs, depositEntries]);
 
   // Auto-seleciona apenas contas "fantasmas" (orfãs do banco, sem id)
   // Contas reais têm a seleção gerenciada pelo Supabase
@@ -303,16 +319,20 @@ export default function Saldos() {
       const gross = withdrawals.reduce((sum, withdrawal) => sum + withdrawal.amount, 0);
       const fee = withdrawalFees[account.key] ?? 0;
       const net = gross * (1 - fee / 100);
+      const depositTotal = (depositEntries[account.key] || []).reduce((sum, entry) => sum + entry.amount, 0);
+      const depositWithdrawalNet = net - depositTotal;
       return {
         ...account,
         withdrawalCount: withdrawals.length,
         withdrawalTotal: gross,
         withdrawalNet: net,
+        depositTotal,
+        depositWithdrawalNet,
         withdrawalFee: fee,
         latestWithdrawal: withdrawals[0] || null,
       };
-    }).filter(account => account.withdrawalCount > 0)
-  ), [summaries, withdrawalsByAccount, withdrawalFees]);
+    }).filter(account => account.withdrawalCount > 0 || account.depositTotal > 0)
+  ), [summaries, withdrawalsByAccount, withdrawalFees, depositEntries]);
 
   const consolidatedWithdrawalsTotal = useMemo(() => (
     withdrawalSummaries.reduce((sum, account) => (
@@ -322,7 +342,7 @@ export default function Saldos() {
 
   const consolidatedWithdrawalsNet = useMemo(() => (
     withdrawalSummaries.reduce((sum, account) => (
-      selectedForWithdrawals.has(account.key) ? sum + account.withdrawalNet : sum
+      selectedForWithdrawals.has(account.key) ? sum + account.depositWithdrawalNet : sum
     ), 0)
   ), [withdrawalSummaries, selectedForWithdrawals]);
 
@@ -340,7 +360,11 @@ export default function Saldos() {
       });
       const gross = currentMonthWithdrawals.reduce((s, w) => s + w.amount, 0);
       const fee = withdrawalFees[acc.key] || 0;
-      return sum + (gross * (1 - fee / 100));
+      const deposits = (depositEntries[acc.key] || []).filter(entry => {
+        const d = new Date(entry.date);
+        return d.getFullYear() === currentYear && (d.getMonth() + 1) === currentMonth;
+      }).reduce((s, entry) => s + entry.amount, 0);
+      return sum + (gross * (1 - fee / 100)) - deposits;
     }, 0);
 
     // 2. Process history from database, excluding current month to avoid double counting if synced
@@ -361,15 +385,24 @@ export default function Saldos() {
       const net = monthlyWithdrawals
         .filter(item => item.year === year && item.month === month && selectedForWithdrawals.has(item.account_key))
         .reduce((sum, item) => sum + Number(item.total_net), 0);
+      const deposits = Object.entries(depositEntries).reduce((sum, [accountKeyValue, entries]) => {
+        if (!selectedForWithdrawals.has(accountKeyValue)) return sum;
+        return sum + entries
+          .filter(entry => {
+            const d = new Date(entry.date);
+            return d.getFullYear() === year && (d.getMonth() + 1) === month;
+          })
+          .reduce((entrySum, entry) => entrySum + entry.amount, 0);
+      }, 0);
       
-      history.push({ year, month, net });
+      history.push({ year, month, net: net - deposits });
     });
 
     return [
       { year: currentYear, month: currentMonth, net: currentMonthTotal, isCurrent: true },
       ...history.sort((a, b) => b.year - a.year || b.month - a.month)
     ];
-  }, [monthlyWithdrawals, withdrawalSummaries, selectedForWithdrawals, withdrawalsByAccount, withdrawalFees]);
+  }, [monthlyWithdrawals, withdrawalSummaries, selectedForWithdrawals, withdrawalsByAccount, withdrawalFees, depositEntries]);
 
   const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
@@ -459,6 +492,38 @@ export default function Saldos() {
     setEditingFeeFor(null);
   }
 
+  function saveDeposits(key, deposits) {
+    const normalized = normalizeDeposits(deposits);
+    setDepositEntries(prev => ({ ...prev, [key]: normalized }));
+
+    if (key.startsWith('account:')) {
+      const id = key.replace('account:', '');
+      supabase.from('accounts').update({ deposit_entries: normalized }).eq('id', id).then(({ error }) => {
+        if (error) console.error('Erro ao salvar depósitos:', error.message);
+      });
+    }
+  }
+
+  function addDeposit(key, amountValue, dateValue) {
+    const amount = parseFloat(String(amountValue || '').replace(',', '.'));
+    if (Number.isNaN(amount) || amount <= 0) return;
+
+    const next = [
+      ...(depositEntries[key] || []),
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        amount,
+        date: dateValue || new Date().toISOString().slice(0, 10),
+      },
+    ];
+    saveDeposits(key, next);
+  }
+
+  function removeDeposit(key, id) {
+    const next = (depositEntries[key] || []).filter(entry => entry.id !== id);
+    saveDeposits(key, next);
+  }
+
   async function deleteHistoryRow(row) {
     console.log('Tentando excluir registro de histórico:', row);
 
@@ -505,7 +570,7 @@ export default function Saldos() {
   return (
     <div className="space-y-6">
       <div className="mb-2">
-        <h2 className="text-xl md:text-2xl font-bold text-white">Saldos & Saques</h2>
+        <h2 className="text-xl md:text-2xl font-bold text-white">Saldos & Depósito/Saque</h2>
         <p className="text-sm text-gray-500 mt-1">Acompanhe as movimentações consolidadas e individuais das suas contas.</p>
       </div>
 
@@ -525,15 +590,15 @@ export default function Saldos() {
           </div>
         </div>
 
-        {/* Total Saques */}
+        {/* Total Depósito/Saque */}
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl px-5 py-4 flex flex-col justify-between">
           <div>
-            <p className="text-xs text-emerald-300 font-semibold uppercase tracking-wider">Saques Consolidados (Líquido)</p>
-            <p className="text-3xl font-bold text-white mt-1">{formatCurrency(consolidatedWithdrawalsNet)}</p>
+            <p className="text-xs text-emerald-300 font-semibold uppercase tracking-wider">Depósito/Saque Consolidado</p>
+            <p className={`text-3xl font-bold mt-1 ${consolidatedWithdrawalsNet >= 0 ? 'text-white' : 'text-red-300'}`}>{formatCurrency(consolidatedWithdrawalsNet)}</p>
           </div>
           <div className="flex items-center justify-between mt-4 pt-2 border-t border-emerald-500/20">
             <p className="text-xs text-emerald-200/60">
-              Bruto {formatCurrency(consolidatedWithdrawalsTotal)} • {selectedForWithdrawals.size} de {withdrawalSummaries.length}
+              Saques brutos {formatCurrency(consolidatedWithdrawalsTotal)} • {selectedForWithdrawals.size} de {withdrawalSummaries.length}
             </p>
           </div>
         </div>
@@ -584,14 +649,14 @@ export default function Saldos() {
                   <button onClick={() => setModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saldos">
                     <History size={16} />
                   </button>
-                  {hasWithdrawals && (
+                  {ws && (
                     <button onClick={() => setWithdrawalModalAccount(account.key)} className="p-1.5 text-gray-500 hover:text-emerald-400 hover:bg-gray-800 rounded-lg transition-colors" title="Histórico de saques">
                       <ArrowDownCircle size={16} />
                     </button>
                   )}
                   <button 
                     onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
-                    className={`p-1.5 rounded-lg transition-colors ${(withdrawalFees[account.key] > 0) || account.exchangeRate !== 1 ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}
+                    className={`p-1.5 rounded-lg transition-colors ${(withdrawalFees[account.key] > 0) || account.exchangeRate !== 1 || (depositEntries[account.key] || []).length > 0 ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}
                     title="Configurações da Conta"
                   >
                     <Settings size={16} />
@@ -623,6 +688,42 @@ export default function Saldos() {
                         <label className="text-[10px] text-gray-400 block mb-1">Cotação (R$)</label>
                         <input type="number" id={`rate-${account.key}`} step="0.01" min="0.01" defaultValue={account.exchangeRate} className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
                       </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2 border-b border-gray-700 pb-1">
+                      <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Depósitos</h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const amountVal = document.getElementById(`dep-amount-${account.key}`).value;
+                          const dateVal = document.getElementById(`dep-date-${account.key}`).value;
+                          addDeposit(account.key, amountVal, dateVal);
+                          document.getElementById(`dep-amount-${account.key}`).value = '';
+                        }}
+                        className="p-1 rounded-lg text-emerald-400 hover:bg-emerald-500/10"
+                        title="Adicionar depósito"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="number" id={`dep-amount-${account.key}`} step="0.01" min="0.01" placeholder="Valor" className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+                      <input type="date" id={`dep-date-${account.key}`} defaultValue={new Date().toISOString().slice(0, 10)} className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+                    </div>
+                    <div className="mt-2 max-h-24 overflow-auto space-y-1">
+                      {(depositEntries[account.key] || []).length === 0 ? (
+                        <p className="text-[10px] text-gray-500">Nenhum depósito informado.</p>
+                      ) : (
+                        [...(depositEntries[account.key] || [])].sort((a, b) => new Date(b.date) - new Date(a.date)).map(entry => (
+                          <div key={entry.id} className="flex items-center justify-between gap-2 text-[11px] text-gray-300 bg-gray-900/70 rounded-lg px-2 py-1">
+                            <span>{new Date(entry.date).toLocaleDateString('pt-BR')} • {formatCurrency(entry.amount)}</span>
+                            <button type="button" onClick={() => removeDeposit(account.key, entry.id)} className="text-gray-500 hover:text-red-400">
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                   <button 
@@ -657,16 +758,16 @@ export default function Saldos() {
                   </p>
                 </div>
 
-                {/* Saques Block */}
-                {hasWithdrawals ? (
+                {/* Depósito/Saque Block */}
+                {ws ? (
                   <div className="p-2.5 sm:p-3 rounded-xl bg-gray-800/30">
-                    <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Saques ({ws.withdrawalCount})</p>
+                    <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Depósito/Saque</p>
                     <div className="flex items-baseline justify-between gap-2">
-                      <p className="text-base sm:text-lg font-bold text-emerald-400 leading-none truncate">+{formatCurrency(ws.withdrawalNet)}</p>
-                      <p className="text-[10px] text-gray-500 truncate shrink-0">Bruto +{formatCurrency(ws.withdrawalTotal)}</p>
+                      <p className={`text-base sm:text-lg font-bold leading-none truncate ${ws.depositWithdrawalNet >= 0 ? 'text-emerald-400' : 'text-red-300'}`}>{formatCurrency(ws.depositWithdrawalNet)}</p>
+                      <p className="text-[10px] text-gray-500 truncate shrink-0">Dep. {formatCurrency(ws.depositTotal)}</p>
                     </div>
                     <p className="text-[9px] sm:text-[10px] text-gray-500 truncate mt-1">
-                      Último: {formatDate(ws.latestWithdrawal?.date)}
+                      Saques líquidos {formatCurrency(ws.withdrawalNet)} • {ws.withdrawalCount} saque(s)
                     </p>
                   </div>
                 ) : (
@@ -686,11 +787,11 @@ export default function Saldos() {
         )}
       </div>
 
-      {/* Saques por Mês */}
+      {/* Depósito/Saque por Mês */}
       <div className="mt-8">
         <div className="flex items-center gap-2 mb-4">
           <ArrowDownCircle size={20} className="text-emerald-400" />
-          <h2 className="text-lg font-bold text-white">Saques por Mês</h2>
+          <h2 className="text-lg font-bold text-white">Depósito/Saque por Mês</h2>
         </div>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -701,7 +802,7 @@ export default function Saldos() {
                 {m.isCurrent && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold uppercase">Vigente</span>}
               </div>
               <p className={`text-xl font-bold ${m.isCurrent ? 'text-white' : 'text-gray-300'}`}>{formatCurrency(m.net)}</p>
-              <p className="text-[10px] text-gray-500 mt-1">Líquido consolidado</p>
+              <p className="text-[10px] text-gray-500 mt-1">Saques líquidos - depósitos</p>
             </div>
           ))}
         </div>
@@ -778,7 +879,7 @@ export default function Saldos() {
         </div>
       )}
 
-      {/* Modal Historico de Saques */}
+      {/* Modal Historico de Depósito/Saque */}
       {withdrawalModalAccount && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setWithdrawalModalAccount(null)}>
           <div className="relative bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={event => event.stopPropagation()}>
@@ -786,7 +887,7 @@ export default function Saldos() {
               <div className="flex items-center gap-2 min-w-0">
                 <ArrowDownCircle size={18} className="text-emerald-400 shrink-0" />
                 <div className="min-w-0">
-                  <h3 className="font-semibold text-white truncate">Histórico de saques</h3>
+                  <h3 className="font-semibold text-white truncate">Histórico de Depósito/Saque</h3>
                   <p className="text-xs text-gray-500 truncate">
                     {withdrawalModalSummary?.name || withdrawalModalAccount}
                     {withdrawalModalSummary?.platform ? ` • ${withdrawalModalSummary.platform}` : ''}
@@ -794,7 +895,7 @@ export default function Saldos() {
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <span className="text-xs text-gray-500">{selectedWithdrawalHistory.length} saque(s)</span>
+                <span className="text-xs text-gray-500">{selectedWithdrawalHistory.length} saque(s) detectado(s)</span>
                 <button onClick={() => setWithdrawalModalAccount(null)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800 transition-colors">
                   <X size={18} />
                 </button>
@@ -814,7 +915,7 @@ export default function Saldos() {
                       <th className="px-5 py-3 font-medium text-gray-400">Data</th>
                       <th className="px-5 py-3 font-medium text-gray-400">Saldo anterior</th>
                       <th className="px-5 py-3 font-medium text-gray-400">Saldo atual</th>
-                      <th className="px-5 py-3 font-medium text-gray-400">Saque</th>
+                      <th className="px-5 py-3 font-medium text-gray-400">Saque detectado</th>
                       <th className="px-5 py-3 w-10"></th>
                     </tr>
                   </thead>
