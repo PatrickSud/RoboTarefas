@@ -599,9 +599,18 @@ export default function Saldos() {
 
   return (
     <div className="space-y-6">
-      <div className="mb-2">
-        <h2 className="text-xl md:text-2xl font-bold text-white">Saldos & Depósito/Saque</h2>
-        <p className="text-sm text-gray-500 mt-1">Acompanhe as movimentações consolidadas e individuais das suas contas.</p>
+      <div className="flex items-start justify-between gap-4 mb-2">
+        <div className="min-w-0">
+          <h2 className="text-xl md:text-2xl font-bold text-white truncate">Saldos & Depósito/Saque</h2>
+          <p className="text-sm text-gray-500 mt-1 line-clamp-1">Acompanhe as movimentações consolidadas e individuais das suas contas.</p>
+        </div>
+        <button 
+          onClick={() => setShowFilters(!showFilters)}
+          className="lg:hidden shrink-0 p-2.5 bg-gray-900 border border-gray-800 rounded-xl text-indigo-400 hover:bg-gray-800 transition-all shadow-lg active:scale-95"
+          title="Filtros e Opções"
+        >
+          {showFilters ? <X size={20} /> : <Filter size={20} />}
+        </button>
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden shadow-xl mb-6">
@@ -662,66 +671,72 @@ export default function Saldos() {
         </div>
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden transition-all duration-300">
-        <button 
-          onClick={() => setShowFilters(!showFilters)}
-          className="w-full px-4 py-3 flex items-center justify-between bg-gray-900 hover:bg-gray-800/50 transition-colors lg:hidden"
+      {/* Visualização das contas - Mobile Overlay / Desktop Section */}
+      <div className={`
+        ${showFilters ? 'fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm' : 'hidden'} 
+        lg:static lg:block lg:z-0 lg:p-0 lg:bg-transparent lg:backdrop-blur-none
+      `}>
+        <div 
+          className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden shadow-2xl w-full max-w-lg lg:max-w-none lg:shadow-none lg:mb-6"
+          onClick={e => e.stopPropagation()}
         >
-          <div className="flex items-center gap-2">
-            <Filter size={16} className="text-indigo-400" />
-            <span className="text-sm font-semibold text-white">Visualização das contas</span>
-          </div>
-          {showFilters ? <ChevronUp size={18} className="text-gray-500" /> : <ChevronDown size={18} className="text-gray-500" />}
-        </button>
-
-        <div className={`${showFilters ? 'block' : 'hidden'} lg:block px-4 py-4 lg:py-3 border-t border-gray-800 lg:border-t-0`}>
-          <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-            <div className="hidden lg:block">
-              <p className="text-sm font-semibold text-white">Visualização das contas</p>
-              <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider">{displaySummaries.length} de {summaries.length} contas exibidas</p>
+          <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between lg:hidden">
+            <div className="flex items-center gap-2">
+              <Filter size={18} className="text-indigo-400" />
+              <h3 className="font-bold text-white">Opções de Visualização</h3>
             </div>
-            
-            <div className="flex flex-col sm:flex-row lg:items-end gap-3">
-              <div className="flex-1 min-w-[160px]">
-                <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 ml-1">Filtro de Resultado</label>
-                <select
-                  value={movementFilter}
-                  onChange={event => setMovementFilter(event.target.value)}
-                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-xl text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                >
-                  <option value="all">Todas as contas</option>
-                  <option value="positive">Com lucro líquido</option>
-                  <option value="negative">Com prejuízo líquido</option>
-                  <option value="none">Sem movimentação</option>
-                </select>
+            <button onClick={() => setShowFilters(false)} className="p-1 text-gray-500 hover:text-white">
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="p-5 lg:p-4">
+            <div className="flex flex-col lg:flex-row lg:items-end gap-5 lg:gap-4 lg:justify-between">
+              <div className="hidden lg:block min-w-max">
+                <p className="text-sm font-semibold text-white">Visualização das contas</p>
+                <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider">{displaySummaries.length} de {summaries.length} contas exibidas</p>
               </div>
-              <div className="flex-1 min-w-[160px]">
-                <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 ml-1">Ordenar por</label>
-                <select
-                  value={summarySort}
-                  onChange={event => setSummarySort(event.target.value)}
-                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-xl text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                >
-                  <option value="platform">Plataforma / Nome</option>
-                  <option value="balance">Maior saldo atual</option>
-                  <option value="withdrawals">Maior saque líquido</option>
-                  <option value="deposits">Maior depósito total</option>
-                  <option value="result">Melhor resultado final</option>
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 ml-1">Seleção em Lote</label>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:items-end gap-4 flex-1">
+                <div className="flex-1 min-w-[140px]">
+                  <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1.5 ml-1 font-bold">Filtro de Resultado</label>
+                  <select
+                    value={movementFilter}
+                    onChange={event => setMovementFilter(event.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-950 border border-gray-700 rounded-xl text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                  >
+                    <option value="all">Todas as contas</option>
+                    <option value="positive">Com lucro líquido</option>
+                    <option value="negative">Com prejuízo líquido</option>
+                    <option value="none">Sem movimentação</option>
+                  </select>
+                </div>
+                <div className="flex-1 min-w-[140px]">
+                  <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1.5 ml-1 font-bold">Ordenar por</label>
+                  <select
+                    value={summarySort}
+                    onChange={event => setSummarySort(event.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-950 border border-gray-700 rounded-xl text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                  >
+                    <option value="platform">Plataforma / Nome</option>
+                    <option value="balance">Maior saldo atual</option>
+                    <option value="withdrawals">Maior saque líquido</option>
+                    <option value="deposits">Maior depósito total</option>
+                    <option value="result">Melhor resultado final</option>
+                  </select>
+                </div>
+                <div className="sm:col-span-2 lg:flex-none">
+                  <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1.5 ml-1 font-bold">Seleção em Lote</label>
                   <div className="flex gap-2">
                     <button 
-                      onClick={selectAll} 
-                      className="flex-1 px-3 py-2 text-[10px] font-bold uppercase tracking-wider bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20 rounded-xl border border-indigo-500/30 transition-all"
+                      onClick={() => { selectAll(); if (window.innerWidth < 1024) setShowFilters(false); }} 
+                      className="flex-1 lg:px-4 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20 rounded-xl border border-indigo-500/30 transition-all active:scale-95"
                     >
                       Todas
                     </button>
                     <button 
-                      onClick={clearSelection} 
-                      className="flex-1 px-3 py-2 text-[10px] font-bold uppercase tracking-wider bg-gray-800 text-gray-500 hover:text-white rounded-xl border border-gray-700 transition-all"
+                      onClick={() => { clearSelection(); if (window.innerWidth < 1024) setShowFilters(false); }} 
+                      className="flex-1 lg:px-4 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider bg-gray-800 text-gray-500 hover:text-white rounded-xl border border-gray-700 transition-all active:scale-95"
                     >
                       Limpar
                     </button>
