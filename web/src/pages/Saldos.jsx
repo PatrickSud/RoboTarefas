@@ -515,13 +515,14 @@ export default function Saldos() {
                 style={{ borderTop: `3px solid ${platformColor}` }}
                 onClick={toggleBoth}
               >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-1">
                   <span className={`shrink-0 ${checked ? 'text-indigo-400' : 'text-gray-600'}`}>
                     {checked ? <CheckCircle2 size={18} /> : <Circle size={18} />}
                   </span>
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-gray-100 truncate" title={account.name}>{account.name}</h3>
-                    <p className="text-xs text-gray-500 truncate">{account.platform || 'Sem plataforma'} {account.phone ? `• ${account.phone}` : ''}</p>
+                    <h3 className="font-semibold text-gray-100 truncate text-sm leading-tight" title={account.name}>{account.name}</h3>
+                    <p className="text-[10px] text-gray-500 truncate leading-tight">{account.platform || 'Sem plataforma'}</p>
+                    {account.phone && <p className="text-[10px] text-gray-600 truncate leading-tight">{account.phone}</p>}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
@@ -606,7 +607,9 @@ export default function Saldos() {
                   <div className="p-2.5 sm:p-3 rounded-xl bg-gray-800/30">
                     <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Saques ({ws.withdrawalCount})</p>
                     <p className="text-base sm:text-lg font-bold text-emerald-400 leading-none truncate mb-1">+{formatCurrency(ws.withdrawalNet)}</p>
-                    <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">Bruto +{formatCurrency(ws.withdrawalTotal)}</p>
+                    <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">
+                      Último: {formatDate(ws.latestWithdrawal?.executed_at)}
+                    </p>
                   </div>
                 ) : (
                   <div className="flex-1 border border-dashed border-gray-800 rounded-xl flex items-center justify-center p-3">
