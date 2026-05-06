@@ -148,13 +148,22 @@ export default function Accounts() {
       }
       const uniqueHours = Array.from(hoursSet).sort((a, b) => a - b);
       
-      await fetch('/api/run-robot', {
+      const response = await fetch('/api/run-robot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'update-schedule', hours: uniqueHours }),
       });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        alert(
+          `Conta salva, mas o agendamento da AWS não foi atualizado: ${
+            payload.message || response.statusText
+          }`
+        );
+      }
     } catch (e) {
       console.error('Erro ao sincronizar agendamento AWS:', e);
+      alert(`Conta salva, mas o agendamento da AWS não foi atualizado: ${e.message}`);
     }
   }
 
