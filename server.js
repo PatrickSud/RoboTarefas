@@ -54,7 +54,7 @@ console.error = (...args) => handleLog(util.format(...args), true)
 
 const port = Number(process.env.ROBOT_API_PORT || 3001)
 const token = process.env.ROBOT_API_TOKEN
-const retentionDays = Number(process.env.PRINT_RETENTION_DAYS || 30)
+const retentionDays = Number(process.env.PRINT_RETENTION_DAYS || 7)
 const idleTimeoutMin = Number(process.env.IDLE_TIMEOUT_MIN || 10)
 
 let running = false
@@ -165,6 +165,10 @@ async function runCleanup() {
     const { error: logError } = await supabase.from('system_logs').delete().lt('created_at', dateLimit.toISOString());
     if (logError) console.error('Erro ao limpar logs antigos do Supabase:', logError.message);
     else console.log(`Limpeza de logs antigos do Supabase concluída (retenção: ${retentionDays} dias).`);
+
+    const { data: cleanedRows, error: historyError } = await supabase.rpc('cleanup_old_run_results', { keep_count: 30 });
+    if (historyError) console.error('Erro ao limpar histórico de execuções:', historyError.message);
+    else console.log(`Limpeza de histórico de execuções concluída: ${cleanedRows ?? 0} registro(s) removido(s) (mantendo 30 por conta).`);
 
   } catch (error) {
     console.error('Falha na limpeza automática:', error.message)
