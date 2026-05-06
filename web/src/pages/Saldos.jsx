@@ -484,7 +484,7 @@ export default function Saldos() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
         {summaries.map(account => {
           const checked = selectedForTotal.has(account.key);
           const platformColor = getPlatformColor(account.platform);
@@ -606,8 +606,11 @@ export default function Saldos() {
                 {hasWithdrawals ? (
                   <div className="p-2.5 sm:p-3 rounded-xl bg-gray-800/30">
                     <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Saques ({ws.withdrawalCount})</p>
-                    <p className="text-base sm:text-lg font-bold text-emerald-400 leading-none truncate mb-1">+{formatCurrency(ws.withdrawalNet)}</p>
-                    <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-base sm:text-lg font-bold text-emerald-400 leading-none truncate">+{formatCurrency(ws.withdrawalNet)}</p>
+                      <p className="text-[10px] text-gray-500 truncate shrink-0">Bruto +{formatCurrency(ws.withdrawalTotal)}</p>
+                    </div>
+                    <p className="text-[9px] sm:text-[10px] text-gray-500 truncate mt-1">
                       Último: {formatDate(ws.latestWithdrawal?.executed_at)}
                     </p>
                   </div>
