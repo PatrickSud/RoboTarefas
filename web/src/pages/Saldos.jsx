@@ -535,7 +535,7 @@ export default function Saldos() {
                   )}
                   <button 
                     onClick={(e) => { e.stopPropagation(); setEditingFeeFor(isEditingFee ? null : account.key); }}
-                    className={`p-1.5 rounded-lg transition-colors ${ws?.withdrawalFee > 0 || account.exchangeRate !== 1 ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}
+                    className={`p-1.5 rounded-lg transition-colors ${(withdrawalFees[account.key] > 0) || account.exchangeRate !== 1 ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}
                     title="Configurações da Conta"
                   >
                     <Settings size={16} />
@@ -552,7 +552,7 @@ export default function Saldos() {
                       type="number"
                       id={`fee-${account.key}`}
                       min="0" max="100" step="0.1"
-                      defaultValue={ws?.withdrawalFee || 0}
+                      defaultValue={withdrawalFees[account.key] || 0}
                       className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
                     />
                   </div>
