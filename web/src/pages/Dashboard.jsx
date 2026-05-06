@@ -65,9 +65,7 @@ function groupLogSessions(logText) {
       continue;
     }
 
-    if (!current) {
-      current = { title: 'Logs anteriores', lines: [] };
-    }
+    if (!current) continue;
 
     current.lines.push(line);
 
@@ -78,7 +76,7 @@ function groupLogSessions(logText) {
   }
 
   if (current) sessions.push(current);
-  return sessions.reverse();
+  return sessions.reverse().slice(0, 1);
 }
 
 export default function Dashboard() {
