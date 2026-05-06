@@ -79,6 +79,69 @@ function groupLogSessions(logText) {
   return sessions.reverse().slice(0, 1);
 }
 
+function categorizeLine(line) {
+  const lower = line.toLowerCase();
+  if (lower.includes('erro') || lower.includes('fail') || lower.includes('exception') || lower.includes('error')) {
+    return { type: 'error', label: '[ERRO]', color: 'text-red-400' };
+  }
+  if (lower.includes('sucesso') || lower.includes('concluí') || lower.includes('completo') || lower.includes('finalizado')) {
+    return { type: 'success', label: '[SUCESSO]', color: 'text-green-400' };
+  }
+  if (lower.includes('aws') || lower.includes('servidor') || lower.includes('ec2')) {
+    return { type: 'aws', label: '[AWS]', color: 'text-purple-400' };
+  }
+  if (lower.includes('conta') || lower.includes('account')) {
+    return { type: 'account', label: '[CONTA]', color: 'text-yellow-400' };
+  }
+  if (lower.includes('info') || lower.includes('iniciando') || lower.includes('ligando')) {
+    return { type: 'info', label: '[INFO]', color: 'text-blue-400' };
+  }
+  return null;
+}
+
+function extractSessionSummary(session) {
+  const title = session.title;
+  const isManual = title.includes('MANUAL');
+  const isAutoShutdown = title.includes('AUTO-SHUTDOWN: ATIVO');
+  const lines = session.lines;
+  const errorCount = lines.filter(l => l.toLowerCase().includes('erro') || l.toLowerCase().includes('error')).length;
+  const successCount = lines.filter(l => l.toLowerCase().includes('sucesso') || l.toLowerCase().includes('concluí')).length;
+  const hasEnd = lines.some(l => l.includes('FIM DA SESSÃO'));
+  return {
+    isManual,
+    isAutoShutdown,
+    errorCount,
+    successCount,
+    hasEnd,
+  };
+}
+
+function buildTimeline(session) {
+  const steps = [];
+  const lines = session.lines;
+  const title = session.title;
+
+  steps.push({ label: 'Sessão iniciada', status: 'done', timestamp: title });
+
+  const hasAwsStart = lines.some(l => l.toLowerCase().includes('aws') && l.toLowerCase().includes('ligand'));
+  const hasRobotStart = lines.some(l => l.toLowerCase().includes('robô') && l.toLowerCase().includes('iniciand'));
+  const hasAccountExec = lines.some(l => l.toLowerCase().includes('conta') && (l.toLowerCase().includes('executand') || l.toLowerCase().includes('processand')));
+  const hasEnd = lines.some(l => l.includes('FIM DA SESSÃO'));
+
+  if (hasAwsStart) steps.push({ label: 'AWS ligando', status: 'done' });
+  else if (hasRobotStart) steps.push({ label: 'AWS ligando', status: 'pending' });
+
+  if (hasRobotStart) steps.push({ label: 'Robô iniciando', status: 'done' });
+  else if (hasAccountExec) steps.push({ label: 'Robô iniciando', status: 'pending' });
+
+  if (hasAccountExec) steps.push({ label: 'Executando contas', status: 'done' });
+
+  if (hasEnd) steps.push({ label: 'Finalizado', status: 'done' });
+  else steps.push({ label: 'Finalizado', status: 'pending' });
+
+  return steps;
+}
+
 export default function Dashboard() {
   const [results, setResults] = useState([]);
   const [activeAccounts, setActiveAccounts] = useState([]);
@@ -92,6 +155,7 @@ export default function Dashboard() {
   const [logsOpen, setLogsOpen] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [livePolling, setLivePolling] = useState(false);
+  const [logsCompactMode, setLogsCompactMode] = useState(false);
   const [modalUrl, setModalUrl] = useState(null);
   const [logsModalOpen, setLogsModalOpen] = useState(false);
   const logsRef = useRef(null);
@@ -517,6 +581,11 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             {logsOpen && (
               <>
+                <button onClick={e => { e.stopPropagation(); setLogsCompactMode(v => !v); }}
+                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                  {logsCompactMode ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  {logsCompactMode ? 'Detalhado' : 'Compacto'}
+                </button>
                 <button onClick={e => { e.stopPropagation(); setLogsModalOpen(true); }}
                   className="text-xs text-gray-500 hover:text-gray-300">
                   Ver completo
@@ -542,17 +611,60 @@ export default function Dashboard() {
               </div>
             ) : (
               <div ref={logsRef} className="bg-gray-950 p-4 overflow-auto max-h-96 space-y-3">
-                {logSessions.map((session, index) => (
-                  <div key={`${session.title}-${index}`} className="border border-gray-800 rounded-lg overflow-hidden">
-                    <div className="px-3 py-2 bg-gray-900 text-[11px] font-semibold text-gray-300 flex items-center justify-between gap-2">
-                      <span className="truncate">{session.title}</span>
-                      <span className="text-gray-600 shrink-0">{session.lines.length} linha(s)</span>
+                {logSessions.map((session, index) => {
+                  const summary = extractSessionSummary(session);
+                  const timeline = buildTimeline(session);
+                  const filteredLines = logsCompactMode
+                    ? session.lines.filter(line => {
+                        const cat = categorizeLine(line);
+                        return cat && (cat.type === 'error' || cat.type === 'success');
+                      })
+                    : session.lines;
+
+                  return (
+                    <div key={`${session.title}-${index}`} className="border border-gray-800 rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-gray-900 text-[11px] font-semibold text-gray-300 flex items-center justify-between gap-2">
+                        <span className="truncate">{session.title}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {summary.isManual && <span className="text-blue-400 text-[10px]">MANUAL</span>}
+                          {summary.isAutoShutdown && <span className="text-orange-400 text-[10px]">AUTO-SHUTDOWN</span>}
+                          <span className="text-gray-600 text-[10px]">{filteredLines.length} linha(s)</span>
+                        </div>
+                      </div>
+                      <div className="px-3 py-2 bg-gray-950 border-b border-gray-800">
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {timeline.map((step, idx) => (
+                            <span
+                              key={idx}
+                              className={`text-[10px] px-2 py-0.5 rounded ${
+                                step.status === 'done'
+                                  ? 'bg-green-500/10 text-green-400'
+                                  : 'bg-gray-800 text-gray-500'
+                              }`}
+                            >
+                              {step.label}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex gap-3 text-[10px] text-gray-400">
+                          <span>Erros: {summary.errorCount}</span>
+                          <span>Sucessos: {summary.successCount}</span>
+                          <span>{summary.hasEnd ? 'Finalizado' : 'Em andamento'}</span>
+                        </div>
+                      </div>
+                      <pre className="text-xs text-green-300 font-mono p-3 whitespace-pre-wrap leading-5">
+                        {filteredLines.map((line, lineIdx) => {
+                          const cat = categorizeLine(line);
+                          return (
+                            <div key={lineIdx} className={cat?.color}>
+                              {cat ? <span className="font-bold">{cat.label}</span> : null} {line}
+                            </div>
+                          );
+                        })}
+                      </pre>
                     </div>
-                    <pre className="text-xs text-green-300 font-mono p-3 whitespace-pre-wrap leading-5">
-                      {session.lines.join('\n')}
-                    </pre>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
