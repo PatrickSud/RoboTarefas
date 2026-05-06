@@ -211,18 +211,28 @@ export default function Dashboard() {
       // 1. Liga a instância
       await callFunction('start');
 
-      // 2. Poll de saúde (máximo 3 minutos)
+      // 2. Poll de saúde (máximo 10 minutos)
       let ready = false;
+      let lastHealthMessage = '';
       const startTime = Date.now();
-      while (!ready && Date.now() - startTime < 180000) {
-        setRunMessage('Aguardando servidor subir (isso pode levar 2 min)...');
+      while (!ready && Date.now() - startTime < 600000) {
+        setRunMessage(
+          lastHealthMessage
+            ? `Aguardando servidor subir... Último retorno: ${lastHealthMessage}`
+            : 'Aguardando servidor subir (isso pode levar alguns minutos)...'
+        );
         await new Promise(r => setTimeout(r, 10000)); // Espera 10s entre tentativas
         const health = await callFunction('health');
         if (health.ok) ready = true;
+        else lastHealthMessage = health.message || 'servidor ainda offline';
       }
 
       if (!ready) {
-        setRunMessage('O servidor demorou muito para responder.');
+        setRunMessage(
+          lastHealthMessage
+            ? `O servidor demorou muito para responder. Último retorno: ${lastHealthMessage}`
+            : 'O servidor demorou muito para responder.'
+        );
         setRunning(false);
         return;
       }

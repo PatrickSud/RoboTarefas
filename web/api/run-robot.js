@@ -44,6 +44,18 @@ function parseBody(req) {
   }
 }
 
+function describeFetchError(error) {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    return 'Timeout ao conectar na API do robô. Verifique se server.js iniciou na AWS, se a porta está liberada e se ROBOT_API_URL aponta para o IP/endereço correto.'
+  }
+
+  if (error?.cause?.code) {
+    return `Falha ao conectar na API do robô (${error.cause.code}). Verifique ROBOT_API_URL, firewall/security group e se npm run api está iniciando no boot da AWS.`
+  }
+
+  return error?.message || 'Falha desconhecida ao conectar na API do robô.'
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, message: 'Método não permitido.' })
@@ -81,8 +93,12 @@ export default async function handler(req, res) {
         })
         const payload = await response.json()
         res.status(200).json({ ok: true, ...payload })
-      } catch {
-        res.status(200).json({ ok: false, status: 'offline' })
+      } catch (error) {
+        res.status(200).json({
+          ok: false,
+          status: 'offline',
+          message: describeFetchError(error)
+        })
       }
       return
     }
@@ -106,8 +122,9 @@ export default async function handler(req, res) {
           ok: Boolean(healthPayload.ok),
           ...healthPayload
         })
-      } catch {
+      } catch (error) {
         status.ok = false
+        status.message = describeFetchError(error)
       }
 
       if (status.ok) {
@@ -121,8 +138,9 @@ export default async function handler(req, res) {
           )
           const logsPayload = await logsResponse.json()
           status.logs = logsPayload.logs || ''
-        } catch {
+        } catch (error) {
           status.logs = ''
+          status.logsMessage = describeFetchError(error)
         }
       }
 
@@ -154,8 +172,10 @@ export default async function handler(req, res) {
         })
         const payload = await response.json()
         res.status(200).json(payload)
-      } catch {
-        res.status(200).json({ ok: false, logs: '' })
+      } catch (error) {
+        res
+          .status(200)
+          .json({ ok: false, logs: '', message: describeFetchError(error) })
       }
       return
     }
