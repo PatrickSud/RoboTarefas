@@ -606,18 +606,14 @@ export default function Saldos() {
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-3xl overflow-hidden shadow-xl mb-6">
-        <div className="bg-gradient-to-r from-indigo-600/20 to-emerald-600/20 px-6 py-5 border-b border-gray-800">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-gradient-to-r from-indigo-600/20 to-emerald-600/20 px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-800">
+          <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Wallet className="text-indigo-400" size={20} />
+              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <Wallet className="text-indigo-400" size={18} />
                 Resumo Consolidado
               </h3>
-              <p className="text-xs text-gray-500 mt-0.5">Visão geral das contas selecionadas para monitoramento</p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={selectAll} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-gray-800 text-gray-300 hover:text-white rounded-lg transition-colors border border-gray-700">Todas Contas</button>
-              <button onClick={clearSelection} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-gray-800 text-gray-300 hover:text-white rounded-lg transition-colors border border-gray-700">Limpar</button>
+              <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">Visão geral das contas selecionadas para monitoramento</p>
             </div>
           </div>
         </div>
@@ -686,7 +682,7 @@ export default function Saldos() {
               <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider">{displaySummaries.length} de {summaries.length} contas exibidas</p>
             </div>
             
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col sm:flex-row lg:items-end gap-3">
               <div className="flex-1 min-w-[160px]">
                 <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 ml-1">Filtro de Resultado</label>
                 <select
@@ -713,6 +709,25 @@ export default function Saldos() {
                   <option value="deposits">Maior depósito total</option>
                   <option value="result">Melhor resultado final</option>
                 </select>
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 ml-1">Seleção em Lote</label>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={selectAll} 
+                      className="flex-1 px-3 py-2 text-[10px] font-bold uppercase tracking-wider bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20 rounded-xl border border-indigo-500/30 transition-all"
+                    >
+                      Todas
+                    </button>
+                    <button 
+                      onClick={clearSelection} 
+                      className="flex-1 px-3 py-2 text-[10px] font-bold uppercase tracking-wider bg-gray-800 text-gray-500 hover:text-white rounded-xl border border-gray-700 transition-all"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
