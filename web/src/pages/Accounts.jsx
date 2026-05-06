@@ -375,31 +375,34 @@ export default function Accounts() {
             Importar
             <input type="file" accept="application/json,.json" onChange={importBackup} className="hidden" />
           </label>
-          <button
-            onClick={() => { setEditingAccount(null); setShowForm(true); }}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-          >
-            <Plus size={16} />
-            Nova Conta
-          </button>
         </div>
       </div>
 
       {/* Search Bar global */}
-      <div className="relative mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-        <input
-          type="text"
-          placeholder="Buscar por nome, telefone ou plataforma..."
-          value={searchBar}
-          onChange={e => { setSearchBar(e.target.value); saveFilters({ searchBar: e.target.value }); }}
-          className="w-full pl-9 pr-9 py-2 bg-gray-900 border border-gray-700 text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600"
-        />
-        {searchBar && (
-          <button onClick={() => { setSearchBar(''); saveFilters({ searchBar: '' }); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-            <X size={14} />
-          </button>
-        )}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-0">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Buscar por nome, telefone ou plataforma..."
+            value={searchBar}
+            onChange={e => { setSearchBar(e.target.value); saveFilters({ searchBar: e.target.value }); }}
+            className="w-full pl-9 pr-9 py-2 bg-gray-900 border border-gray-700 text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600"
+          />
+          {searchBar && (
+            <button onClick={() => { setSearchBar(''); saveFilters({ searchBar: '' }); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={() => { setEditingAccount(null); setShowForm(true); }}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shrink-0"
+        >
+          <Plus size={16} />
+          <span className="hidden sm:inline">Nova Conta</span>
+          <span className="sm:hidden">Nova</span>
+        </button>
       </div>
 
       {showForm && (
