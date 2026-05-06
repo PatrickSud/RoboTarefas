@@ -110,11 +110,7 @@ export default function Dashboard() {
         };
       });
       
-      const accountIds = new Set((accounts || []).map(a => `id:${a.id}`));
-      const accountFallbacks = new Set((accounts || []).map(getAccKey));
-      
-      const orphanResults = Object.keys(latestByKey).filter(k => !accountIds.has(k) && !accountFallbacks.has(k)).map(k => latestByKey[k]);
-      setResults([...merged, ...orphanResults]);
+      setResults(merged);
     }
     setLoading(false);
   }

@@ -75,10 +75,11 @@ export default function Saldos() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: accountsData }, { data: resultsData }, { data: monthlyData }] = await Promise.all([
+      const [{ data: accountsData, error: accountsError }, { data: resultsData }, { data: monthlyData }] = await Promise.all([
         supabase
           .from('accounts')
           .select('id,name,platform,phone,active,sort_order,selected_for_total,selected_for_withdrawals,withdrawal_fee,currency_symbol,exchange_rate,deposit_entries')
+          .eq('active', true)
           .order('sort_order', { ascending: true, nullsFirst: false }),
         supabase
           .from('account_run_results')
@@ -92,6 +93,12 @@ export default function Saldos() {
           .order('year', { ascending: false })
           .order('month', { ascending: false }),
       ]);
+
+      if (accountsError) {
+        alert(`Erro ao carregar contas/saldos: ${accountsError.message}`);
+        setLoading(false);
+        return;
+      }
 
       const accountsArray = accountsData || [];
       const fees = {};
@@ -166,31 +173,6 @@ export default function Saldos() {
       };
     });
 
-    for (const result of latestByKey.values()) {
-      const key = resultKey(result);
-      const fallbackAccountKey = result.account_id ? `account:${result.account_id}` : null;
-      if (!accountKeys.has(key) && (!fallbackAccountKey || !accountKeys.has(fallbackAccountKey))) {
-        const rawBalance = parseBalance(result.balance);
-        const ex = exchangeConfigs[key] || { rate: 1, symbol: '' };
-        const balanceValue = rawBalance * (ex.rate || 1);
-        
-        merged.push({
-          key,
-          id: null,
-          name: result.account_name,
-          platform: result.platform,
-          phone: result.phone,
-          active: true,
-          latest: result,
-          rawBalance,
-          balanceValue,
-          currencySymbol: ex.symbol,
-          exchangeRate: ex.rate || 1,
-          deposits: depositEntries[key] || [],
-        });
-      }
-    }
-
     return merged.sort((a, b) => {
       const platA = String(a.platform || '').toLowerCase();
       const platB = String(b.platform || '').toLowerCase();
@@ -201,31 +183,6 @@ export default function Saldos() {
       return nameA.localeCompare(nameB);
     });
   }, [accounts, results, exchangeConfigs, depositEntries]);
-
-  // Auto-seleciona apenas contas "fantasmas" (orfãs do banco, sem id)
-  // Contas reais têm a seleção gerenciada pelo Supabase
-  useEffect(() => {
-    const orphans = summaries.filter(s => !s.id);
-    if (orphans.length === 0) return;
-
-    setSelectedForTotal(prev => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const s of orphans) {
-        if (!next.has(s.key)) { next.add(s.key); changed = true; }
-      }
-      return changed ? next : prev;
-    });
-
-    setSelectedForWithdrawals(prev => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const s of orphans) {
-        if (!next.has(s.key)) { next.add(s.key); changed = true; }
-      }
-      return changed ? next : prev;
-    });
-  }, [summaries]);
 
   const consolidatedTotal = useMemo(() => (
     summaries.reduce((sum, account) => (
@@ -494,19 +451,29 @@ export default function Saldos() {
 
   function saveDeposits(key, deposits) {
     const normalized = normalizeDeposits(deposits);
+    const previous = depositEntries[key] || [];
     setDepositEntries(prev => ({ ...prev, [key]: normalized }));
 
     if (key.startsWith('account:')) {
       const id = key.replace('account:', '');
       supabase.from('accounts').update({ deposit_entries: normalized }).eq('id', id).then(({ error }) => {
-        if (error) console.error('Erro ao salvar depósitos:', error.message);
+        if (error) {
+          setDepositEntries(prev => ({ ...prev, [key]: previous }));
+          console.error('Erro ao salvar depósitos:', error.message);
+          alert(`Erro ao salvar depósito: ${error.message}`);
+        }
       });
+    } else {
+      alert('Não foi possível salvar depósito porque esta conta não existe mais na guia Contas.');
     }
   }
 
   function addDeposit(key, amountValue, dateValue) {
     const amount = parseFloat(String(amountValue || '').replace(',', '.'));
-    if (Number.isNaN(amount) || amount <= 0) return;
+    if (Number.isNaN(amount) || amount <= 0) {
+      alert('Informe um valor de depósito maior que zero.');
+      return;
+    }
 
     const next = [
       ...(depositEntries[key] || []),
@@ -516,6 +483,12 @@ export default function Saldos() {
         date: dateValue || new Date().toISOString().slice(0, 10),
       },
     ];
+    setSelectedForWithdrawals(prev => {
+      const nextSelected = new Set(prev);
+      nextSelected.add(key);
+      return nextSelected;
+    });
+    updateAccountField(key, { selected_for_withdrawals: true });
     saveDeposits(key, next);
   }
 
@@ -609,22 +582,18 @@ export default function Saldos() {
           const checked = selectedForTotal.has(account.key);
           const platformColor = getPlatformColor(account.platform);
           const ws = withdrawalSummaries.find(w => w.key === account.key);
-          const hasWithdrawals = !!ws;
           const isEditingFee = editingFeeFor === account.key;
 
           function toggleBoth() {
             const isSelected = selectedForTotal.has(account.key);
             toggleAccount(account.key);
-            if (hasWithdrawals) {
-              // sync withdrawal to same state
-              setSelectedForWithdrawals(prev => {
-                const next = new Set(prev);
-                if (isSelected) next.delete(account.key);
-                else next.add(account.key);
-                updateAccountField(account.key, { selected_for_withdrawals: !isSelected });
-                return next;
-              });
-            }
+            setSelectedForWithdrawals(prev => {
+              const next = new Set(prev);
+              if (isSelected) next.delete(account.key);
+              else next.add(account.key);
+              updateAccountField(account.key, { selected_for_withdrawals: !isSelected });
+              return next;
+            });
           }
 
           return (
