@@ -206,7 +206,15 @@ export default function Dashboard() {
         };
       });
       
-      setResults(merged);
+      // Ordena os resultados para que os mais recentes apareçam primeiro
+      const sortedMerged = merged.sort((a, b) => {
+        if (!a.executed_at && !b.executed_at) return 0;
+        if (!a.executed_at) return 1;
+        if (!b.executed_at) return -1;
+        return new Date(b.executed_at) - new Date(a.executed_at);
+      });
+      
+      setResults(sortedMerged);
     }
     setLoading(false);
   }
