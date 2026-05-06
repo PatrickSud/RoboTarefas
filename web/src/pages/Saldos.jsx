@@ -72,6 +72,8 @@ export default function Saldos() {
   const [exchangeConfigs, setExchangeConfigs] = useState({});
   const [depositEntries, setDepositEntries] = useState({});
   const [depositDrafts, setDepositDrafts] = useState({});
+  const [movementFilter, setMovementFilter] = useState('all');
+  const [summarySort, setSummarySort] = useState('platform');
   const [editingFeeFor, setEditingFeeFor] = useState(null);
 
   useEffect(() => {
@@ -368,6 +370,44 @@ export default function Saldos() {
     withdrawalsByAccount.get(withdrawalModalAccount) || []
   ), [withdrawalsByAccount, withdrawalModalAccount]);
 
+  const summariesWithMovement = useMemo(() => (
+    summaries.map(account => {
+      const movement = withdrawalSummaries.find(item => item.key === account.key);
+      return {
+        ...account,
+        withdrawalCount: movement?.withdrawalCount || 0,
+        withdrawalTotal: movement?.withdrawalTotal || 0,
+        withdrawalNet: movement?.withdrawalNet || 0,
+        depositTotal: movement?.depositTotal || 0,
+        depositWithdrawalNet: movement?.depositWithdrawalNet || 0,
+        withdrawalFee: movement?.withdrawalFee || withdrawalFees[account.key] || 0,
+        latestWithdrawal: movement?.latestWithdrawal || null,
+      };
+    })
+  ), [summaries, withdrawalSummaries, withdrawalFees]);
+
+  const displaySummaries = useMemo(() => {
+    const filtered = summariesWithMovement.filter(account => {
+      if (movementFilter === 'positive') return account.depositWithdrawalNet > 0;
+      if (movementFilter === 'negative') return account.depositWithdrawalNet < 0;
+      if (movementFilter === 'none') return account.withdrawalNet === 0 && account.depositTotal === 0;
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (summarySort === 'balance') return b.balanceValue - a.balanceValue;
+      if (summarySort === 'withdrawals') return b.withdrawalNet - a.withdrawalNet;
+      if (summarySort === 'deposits') return b.depositTotal - a.depositTotal;
+      if (summarySort === 'result') return b.depositWithdrawalNet - a.depositWithdrawalNet;
+
+      const platA = String(a.platform || '').toLowerCase();
+      const platB = String(b.platform || '').toLowerCase();
+      if (platA < platB) return -1;
+      if (platA > platB) return 1;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+  }, [summariesWithMovement, movementFilter, summarySort]);
+
   function updateAccountField(key, fields) {
     if (key.startsWith('account:')) {
       const id = key.replace('account:', '');
@@ -582,11 +622,47 @@ export default function Saldos() {
         </div>
       </div>
 
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-white">Visualização das contas</p>
+          <p className="text-xs text-gray-500 mt-0.5">{displaySummaries.length} de {summaries.length} contas exibidas</p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1">Filtro</label>
+            <select
+              value={movementFilter}
+              onChange={event => setMovementFilter(event.target.value)}
+              className="w-full sm:w-44 px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">Todas</option>
+              <option value="positive">Com lucro</option>
+              <option value="negative">Com prejuízo</option>
+              <option value="none">Sem movimentação</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1">Ordenar por</label>
+            <select
+              value={summarySort}
+              onChange={event => setSummarySort(event.target.value)}
+              className="w-full sm:w-52 px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="platform">Plataforma/Nome</option>
+              <option value="balance">Maior saldo</option>
+              <option value="withdrawals">Maior saque líquido</option>
+              <option value="deposits">Maior depósito</option>
+              <option value="result">Maior resultado líquido</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-        {summaries.map(account => {
+        {displaySummaries.map(account => {
           const checked = selectedForTotal.has(account.key);
           const platformColor = getPlatformColor(account.platform);
-          const ws = withdrawalSummaries.find(w => w.key === account.key);
+          const ws = account;
           const isEditingFee = editingFeeFor === account.key;
           const depositDraft = depositDrafts[account.key] || {
             amount: '',
@@ -752,22 +828,28 @@ export default function Saldos() {
                 </div>
 
                 {/* Depósito/Saque Block */}
-                {ws ? (
-                  <div className="p-2.5 sm:p-3 rounded-xl bg-gray-800/30">
-                    <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-1 uppercase tracking-wide">Depósito/Saque</p>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className={`text-base sm:text-lg font-bold leading-none truncate ${ws.depositWithdrawalNet >= 0 ? 'text-emerald-400' : 'text-red-300'}`}>{formatCurrency(ws.depositWithdrawalNet)}</p>
-                      <p className="text-[10px] text-gray-500 truncate shrink-0">Dep. {formatCurrency(ws.depositTotal)}</p>
+                <div className="p-2.5 sm:p-3 rounded-xl bg-gray-800/30">
+                  <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 mb-2 uppercase tracking-wide">Depósito/Saque</p>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-gray-500">Depósitos</span>
+                      <span className="text-xs font-semibold text-sky-300">{formatCurrency(ws.depositTotal)}</span>
                     </div>
-                    <p className="text-[9px] sm:text-[10px] text-gray-500 truncate mt-1">
-                      Saques líquidos {formatCurrency(ws.withdrawalNet)} • {ws.withdrawalCount} saque(s)
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-gray-500">Saques líquidos</span>
+                      <span className="text-xs font-semibold text-emerald-300">{formatCurrency(ws.withdrawalNet)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-700/70">
+                      <span className="text-[10px] text-gray-400 font-medium">Resultado</span>
+                      <span className={`text-sm font-bold ${ws.depositWithdrawalNet >= 0 ? 'text-emerald-400' : 'text-red-300'}`}>
+                        {formatCurrency(ws.depositWithdrawalNet)}
+                      </span>
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex-1 border border-dashed border-gray-800 rounded-xl flex items-center justify-center p-3">
-                    <p className="text-[11px] text-gray-600">Nenhum saque detectado</p>
-                  </div>
-                )}
+                  <p className="text-[9px] sm:text-[10px] text-gray-500 truncate mt-2">
+                    {ws.withdrawalCount > 0 ? `${ws.withdrawalCount} saque(s) detectado(s)` : 'Sem saques detectados'}
+                  </p>
+                </div>
               </div>
             </div>
           );
@@ -776,6 +858,12 @@ export default function Saldos() {
           <div className="col-span-full p-12 text-center border border-dashed border-gray-800 rounded-2xl">
             <Wallet size={32} className="mx-auto text-gray-600 mb-3" />
             <p className="text-gray-400">Nenhum saldo ou conta cadastrada.</p>
+          </div>
+        )}
+        {summaries.length > 0 && displaySummaries.length === 0 && (
+          <div className="col-span-full p-12 text-center border border-dashed border-gray-800 rounded-2xl">
+            <Wallet size={32} className="mx-auto text-gray-600 mb-3" />
+            <p className="text-gray-400">Nenhuma conta encontrada para o filtro selecionado.</p>
           </div>
         )}
       </div>
