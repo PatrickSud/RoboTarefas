@@ -584,7 +584,10 @@ export default function Dashboard() {
         >
           <div className="flex items-center gap-2">
             <Terminal size={16} className="text-green-400" />
-            <span className="font-semibold text-white">Logs da Máquina AWS</span>
+            <span className="font-semibold text-white">
+              <span className="sm:hidden">Logs</span>
+              <span className="hidden sm:inline">Logs da Máquina AWS</span>
+            </span>
           </div>
           <div className="flex items-center gap-2">
             {logsOpen && (
