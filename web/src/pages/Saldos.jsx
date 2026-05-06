@@ -71,6 +71,7 @@ export default function Saldos() {
   const [withdrawalFees, setWithdrawalFees] = useState({});
   const [exchangeConfigs, setExchangeConfigs] = useState({});
   const [depositEntries, setDepositEntries] = useState({});
+  const [depositDrafts, setDepositDrafts] = useState({});
   const [editingFeeFor, setEditingFeeFor] = useState(null);
 
   useEffect(() => {
@@ -490,6 +491,10 @@ export default function Saldos() {
     });
     updateAccountField(key, { selected_for_withdrawals: true });
     saveDeposits(key, next);
+    setDepositDrafts(prev => ({
+      ...prev,
+      [key]: { amount: '', date: dateValue || new Date().toISOString().slice(0, 10) },
+    }));
   }
 
   function removeDeposit(key, id) {
@@ -583,6 +588,10 @@ export default function Saldos() {
           const platformColor = getPlatformColor(account.platform);
           const ws = withdrawalSummaries.find(w => w.key === account.key);
           const isEditingFee = editingFeeFor === account.key;
+          const depositDraft = depositDrafts[account.key] || {
+            amount: '',
+            date: new Date().toISOString().slice(0, 10),
+          };
 
           function toggleBoth() {
             const isSelected = selectedForTotal.has(account.key);
@@ -664,12 +673,7 @@ export default function Saldos() {
                       <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Depósitos</h4>
                       <button
                         type="button"
-                        onClick={() => {
-                          const amountVal = document.getElementById(`dep-amount-${account.key}`).value;
-                          const dateVal = document.getElementById(`dep-date-${account.key}`).value;
-                          addDeposit(account.key, amountVal, dateVal);
-                          document.getElementById(`dep-amount-${account.key}`).value = '';
-                        }}
+                        onClick={() => addDeposit(account.key, depositDraft.amount, depositDraft.date)}
                         className="p-1 rounded-lg text-emerald-400 hover:bg-emerald-500/10"
                         title="Adicionar depósito"
                       >
@@ -677,8 +681,27 @@ export default function Saldos() {
                       </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <input type="number" id={`dep-amount-${account.key}`} step="0.01" min="0.01" placeholder="Valor" className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
-                      <input type="date" id={`dep-date-${account.key}`} defaultValue={new Date().toISOString().slice(0, 10)} className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="Valor"
+                        value={depositDraft.amount}
+                        onChange={event => setDepositDrafts(prev => ({
+                          ...prev,
+                          [account.key]: { ...depositDraft, amount: event.target.value },
+                        }))}
+                        className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
+                      />
+                      <input
+                        type="date"
+                        value={depositDraft.date}
+                        onChange={event => setDepositDrafts(prev => ({
+                          ...prev,
+                          [account.key]: { ...depositDraft, date: event.target.value },
+                        }))}
+                        className="w-full px-2 py-1.5 text-sm bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
+                      />
                     </div>
                     <div className="mt-2 max-h-24 overflow-auto space-y-1">
                       {(depositEntries[account.key] || []).length === 0 ? (
