@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Copy } from 'lucide-react';
+import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Copy, Download } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -16,7 +16,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-function SortableRow({ account, onToggleActive, onToggleTestMode, onEdit, onDelete }) {
+function SortableRow({ account, onToggleActive, onToggleTestMode, onEdit, onDuplicate, onDelete }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: account.id });
 
@@ -73,6 +73,9 @@ function SortableRow({ account, onToggleActive, onToggleTestMode, onEdit, onDele
         <div className="flex items-center justify-end gap-2">
           <button onClick={() => onEdit(account)} className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-500 hover:text-gray-200">
             <Pencil size={16} />
+          </button>
+          <button onClick={() => onDuplicate(account)} className="p-1.5 rounded-lg hover:bg-indigo-500/10 text-gray-500 hover:text-indigo-300" title="Duplicar conta">
+            <Copy size={16} />
           </button>
           <button onClick={() => onDelete(account)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-gray-500 hover:text-red-400">
             <Trash2 size={16} />
@@ -231,6 +234,61 @@ export default function Accounts() {
     }
   }
 
+  async function duplicateAccount(account) {
+    const copyName = `${account.name} (cópia)`;
+    const payload = {
+      ...account,
+      id: undefined,
+      name: copyName,
+      active: false,
+      test_mode: false,
+      local_key: `${account.platform}:${account.phone}:${copyName}:${Date.now()}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9:.-]/g, '-'),
+      sort_order: accounts.length + 1,
+      created_at: undefined,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('accounts').insert(payload).select('*').single();
+    if (error) {
+      alert('Erro ao duplicar conta: ' + error.message);
+      return;
+    }
+
+    setAccounts(prev => [...prev, data]);
+    setEditingAccount(data);
+    setShowForm(true);
+  }
+
+  async function exportBackup() {
+    const [{ data: accountsData, error: accountsError }, { data: settingsData, error: settingsError }] = await Promise.all([
+      supabase.from('accounts').select('*').order('sort_order', { ascending: true, nullsFirst: false }),
+      supabase.from('global_settings').select('*'),
+    ]);
+
+    if (accountsError || settingsError) {
+      alert(`Erro ao exportar backup: ${accountsError?.message || settingsError?.message}`);
+      return;
+    }
+
+    const backup = {
+      exported_at: new Date().toISOString(),
+      version: 1,
+      accounts: accountsData || [],
+      global_settings: settingsData || [],
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `robotarefas-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleDragEnd(event) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -256,13 +314,22 @@ export default function Accounts() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl md:text-2xl font-bold text-white">Contas</h2>
-        <button
-          onClick={() => { setEditingAccount(null); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-        >
-          <Plus size={16} />
-          Nova Conta
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportBackup}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            <Download size={16} />
+            Exportar JSON
+          </button>
+          <button
+            onClick={() => { setEditingAccount(null); setShowForm(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            <Plus size={16} />
+            Nova Conta
+          </button>
+        </div>
       </div>
 
       {/* Search Bar global */}
@@ -326,6 +393,7 @@ export default function Accounts() {
                       onToggleActive={toggleActive}
                       onToggleTestMode={toggleTestMode}
                       onEdit={(a) => { setEditingAccount(a); setShowForm(true); }}
+                      onDuplicate={duplicateAccount}
                       onDelete={deleteAccount}
                     />
                   ))}

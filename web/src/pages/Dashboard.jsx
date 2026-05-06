@@ -53,9 +53,11 @@ async function parseApiResponse(response) {
 
 export default function Dashboard() {
   const [results, setResults] = useState([]);
+  const [activeAccounts, setActiveAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [runMessage, setRunMessage] = useState('');
+  const [runStep, setRunStep] = useState('idle');
   const [autoShutdown, setAutoShutdown] = useState(true);
   const [awsStatus, setAwsStatus] = useState('unknown'); // 'online' | 'offline' | 'unknown'
   const [logs, setLogs] = useState('');
@@ -70,10 +72,11 @@ export default function Dashboard() {
   async function fetchLatestResults() {
     const [{ data: configPrefs }, { data: accounts }] = await Promise.all([
       supabase.from('global_settings').select('value').eq('key', 'preferences').single(),
-      supabase.from('accounts').select('id,name,platform,phone,active,sort_order').eq('active', true).order('sort_order', { ascending: true, nullsFirst: false }),
+      supabase.from('accounts').select('id,name,platform,phone,active,sort_order,schedules').eq('active', true).order('sort_order', { ascending: true, nullsFirst: false }),
     ]);
 
     if (configPrefs) setAutoShutdown(configPrefs.value.auto_shutdown ?? true);
+    setActiveAccounts(accounts || []);
 
     const { data, error } = await supabase
       .from('account_run_results')
@@ -219,6 +222,7 @@ export default function Dashboard() {
   async function handleRunNow() {
     setRunning(true);
     setLogsOpen(true);
+    setRunStep('starting-aws');
     setRunMessage('Ligando servidor AWS...');
 
     const callFunction = async (action) => {
@@ -237,6 +241,7 @@ export default function Dashboard() {
       await callFunction('start');
 
       // 2. Poll de saúde (máximo 10 minutos)
+      setRunStep('waiting-server');
       let ready = false;
       let lastHealthMessage = '';
       const startTime = Date.now();
@@ -263,14 +268,20 @@ export default function Dashboard() {
       }
 
       // 3. Dispara o robô
+      setRunStep('starting-robot');
       setRunMessage('Servidor online! Iniciando robô...');
       const run = await callFunction('run');
+      setRunStep('running-robot');
       setRunMessage(run.message || 'Execução iniciada com sucesso.');
       setLivePolling(true);
-      setTimeout(() => setLivePolling(false), 900000);
+      setTimeout(() => {
+        setLivePolling(false);
+        setRunStep('finished');
+      }, 900000);
     } catch (error) {
       setRunMessage(`Erro: ${error.message}`);
       setLivePolling(false);
+      setRunStep('idle');
     } finally {
       setRunning(false);
     }
@@ -278,6 +289,39 @@ export default function Dashboard() {
 
   const successCount = results.filter(r => r.status === 'success').length;
   const errorCount = results.filter(r => r.status === 'error').length;
+  const executedCount = results.filter(r => r.executed_at && r.status !== 'pending').length;
+  const latestExecutionDate = results
+    .filter(r => r.executed_at)
+    .map(r => new Date(r.executed_at))
+    .sort((a, b) => b - a)[0];
+  const latestExecutionRows = latestExecutionDate
+    ? results.filter(r => r.executed_at && Math.abs(new Date(r.executed_at) - latestExecutionDate) < 120000)
+    : [];
+  const latestExecutionDuration = latestExecutionRows.length > 1
+    ? Math.max(...latestExecutionRows.map(r => new Date(r.executed_at).getTime())) - Math.min(...latestExecutionRows.map(r => new Date(r.executed_at).getTime()))
+    : null;
+  const nextSchedule = (() => {
+    const hours = [...new Set(activeAccounts.flatMap(account => account.schedules || []))]
+      .filter(hour => Number.isInteger(hour))
+      .sort((a, b) => a - b);
+    if (hours.length === 0) return null;
+    const now = new Date();
+    const currentHour = Number(new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(now));
+    const nextHour = hours.find(hour => hour > currentHour) ?? hours[0];
+    return `${String(nextHour).padStart(2, '0')}:00`;
+  })();
+  const runSteps = [
+    { key: 'starting-aws', label: 'Ligando AWS' },
+    { key: 'waiting-server', label: 'Aguardando servidor' },
+    { key: 'starting-robot', label: 'Iniciando robô' },
+    { key: 'running-robot', label: 'Robô em execução' },
+    { key: 'finished', label: 'Finalizado' },
+  ];
+  const currentStepIndex = runSteps.findIndex(step => step.key === runStep);
   const logsLines = logs ? logs.split('\n') : [];
   const latestSessionStart = logsLines.findLastIndex(line => line.includes('INÍCIO DA SESSÃO'));
   const visibleLogs = latestSessionStart >= 0
@@ -351,6 +395,59 @@ export default function Dashboard() {
       </div>
 
 
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 md:gap-4 mb-6">
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500">Última execução</p>
+          <p className="text-sm md:text-base font-semibold text-white mt-1">{latestExecutionDate ? latestExecutionDate.toLocaleString('pt-BR') : 'Sem execução'}</p>
+        </div>
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500">Próxima execução</p>
+          <p className="text-sm md:text-base font-semibold text-white mt-1">{nextSchedule || 'Sem agendamento'}</p>
+        </div>
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500">Executadas</p>
+          <p className="text-sm md:text-base font-semibold text-white mt-1">{executedCount} conta(s)</p>
+        </div>
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500">Com erro</p>
+          <p className="text-sm md:text-base font-semibold text-red-300 mt-1">{errorCount} conta(s)</p>
+        </div>
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
+          <p className="text-[11px] uppercase tracking-wider text-gray-500">Tempo total</p>
+          <p className="text-sm md:text-base font-semibold text-white mt-1">
+            {latestExecutionDuration !== null ? `${Math.max(1, Math.round(latestExecutionDuration / 60000))} min` : 'Indisponível'}
+          </p>
+        </div>
+      </div>
+
+      {runStep !== 'idle' && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-6">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <p className="text-sm font-semibold text-white">Progresso do Rodar Agora</p>
+            <p className="text-xs text-gray-500">{runSteps[Math.max(currentStepIndex, 0)]?.label || 'Preparando'}</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+            {runSteps.map((step, index) => {
+              const done = currentStepIndex > index;
+              const active = currentStepIndex === index;
+              return (
+                <div
+                  key={step.key}
+                  className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                    done
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : active
+                      ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
+                      : 'bg-gray-950 border-gray-800 text-gray-500'
+                  }`}
+                >
+                  {step.label}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6 md:mb-8">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-5">
