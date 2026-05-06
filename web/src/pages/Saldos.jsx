@@ -451,30 +451,29 @@ export default function Saldos() {
   }
 
   function selectAll() {
-    setSelectedForTotal(new Set(summaries.map(account => account.key)));
+    const allKeys = summaries.map(account => account.key);
+    setSelectedForTotal(new Set(allKeys));
+    setSelectedForWithdrawals(new Set(allKeys));
+    
+    // Atualiza o banco para todas as contas
     Promise.all(summaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_total: true }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
+      s.key.startsWith('account:') ? supabase.from('accounts').update({ 
+        selected_for_total: true, 
+        selected_for_withdrawals: true 
+      }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
     ));
   }
 
   function clearSelection() {
     setSelectedForTotal(new Set());
-    Promise.all(summaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_total: false }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
-    ));
-  }
-
-  function selectAllWithdrawals() {
-    setSelectedForWithdrawals(new Set(withdrawalSummaries.map(account => account.key)));
-    Promise.all(withdrawalSummaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_withdrawals: true }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
-    ));
-  }
-
-  function clearWithdrawalSelection() {
     setSelectedForWithdrawals(new Set());
-    Promise.all(withdrawalSummaries.map(s => 
-      s.key.startsWith('account:') ? supabase.from('accounts').update({ selected_for_withdrawals: false }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
+    
+    // Atualiza o banco para todas as contas
+    Promise.all(summaries.map(s => 
+      s.key.startsWith('account:') ? supabase.from('accounts').update({ 
+        selected_for_total: false, 
+        selected_for_withdrawals: false 
+      }).eq('id', s.key.replace('account:', '')) : Promise.resolve()
     ));
   }
 
