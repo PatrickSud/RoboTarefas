@@ -147,9 +147,11 @@ function runRobot(shouldShutdown = process.env.AUTO_SHUTDOWN === 'true', isManua
     if (shouldShutdown) {
       console.log('AUTO_SHUTDOWN ativo. Desligando a máquina em 60 segundos...')
       await flushLogs()
+      await runCleanup()
       spawn('shutdown', ['/s', '/t', '60'])
     } else {
       await flushLogs()
+      await runCleanup()
       resetIdleTimer()
     }
   })
@@ -170,9 +172,92 @@ async function runCleanup() {
     if (historyError) console.error('Erro ao limpar histórico de execuções:', historyError.message);
     else console.log(`Limpeza de histórico de execuções concluída: ${cleanedRows ?? 0} registro(s) removido(s) (mantendo 30 por conta).`);
 
+    await syncMonthlyWithdrawals();
+
   } catch (error) {
     console.error('Falha na limpeza automática:', error.message)
   }
+}
+
+async function syncMonthlyWithdrawals() {
+  console.log('Iniciando sincronização de saques mensais...');
+  try {
+    const [{ data: accounts }, { data: results }] = await Promise.all([
+      supabase.from('accounts').select('*'),
+      supabase.from('account_run_results').select('*').order('executed_at', { ascending: true })
+    ]);
+
+    if (!results || results.length === 0) return;
+
+    const historyByAccount = new Map();
+    for (const result of results) {
+      const key = result.account_id ? `account:${result.account_id}` : null;
+      if (!key) continue; 
+      if (!historyByAccount.has(key)) historyByAccount.set(key, []);
+      historyByAccount.get(key).push(result);
+    }
+
+    const monthlyData = [];
+
+    for (const account of accounts || []) {
+      const key = `account:${account.id}`;
+      const history = historyByAccount.get(key) || [];
+      if (history.length < 2) continue;
+
+      const rate = account.exchange_rate || 1;
+      const fee = account.withdrawal_fee || 0;
+
+      for (let i = 1; i < history.length; i++) {
+        const prev = history[i-1];
+        const curr = history[i];
+        
+        const prevBal = parseBalance(prev.balance) * rate;
+        const currBal = parseBalance(curr.balance) * rate;
+
+        if (prevBal > 0 && currBal < prevBal) {
+          const amount = prevBal - currBal;
+          const date = new Date(curr.executed_at);
+          const year = date.getFullYear();
+          const month = date.getMonth() + 1;
+
+          const monthKey = `${year}-${month}-${key}`;
+          let entry = monthlyData.find(d => d.monthKey === monthKey);
+          if (!entry) {
+            entry = { 
+              monthKey, year, month, 
+              account_key: key, 
+              account_name: account.name, 
+              platform: account.platform,
+              total_gross: 0, 
+              total_net: 0, 
+              withdrawal_count: 0 
+            };
+            monthlyData.push(entry);
+          }
+          entry.total_gross += amount;
+          entry.total_net += amount * (1 - fee / 100);
+          entry.withdrawal_count += 1;
+        }
+      }
+    }
+
+    for (const data of monthlyData) {
+      const { monthKey, ...payload } = data;
+      await supabase.from('monthly_withdrawals').upsert(payload, { onConflict: 'year,month,account_key' });
+    }
+
+    console.log('Sincronização de saques mensais concluída.');
+  } catch (err) {
+    console.error('Erro na sincronização de saques mensais:', err.message);
+  }
+}
+
+function parseBalance(value) {
+  const normalized = String(value ?? '0')
+    .replace(/[^\d,.-]/g, '')
+    .replace(',', '.');
+  const parsed = parseFloat(normalized);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 const server = http.createServer(async (req, res) => {

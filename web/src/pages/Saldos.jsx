@@ -57,13 +57,14 @@ export default function Saldos() {
   const [selectedForWithdrawals, setSelectedForWithdrawals] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  const [monthlyWithdrawals, setMonthlyWithdrawals] = useState([]);
   const [withdrawalFees, setWithdrawalFees] = useState({});
   const [exchangeConfigs, setExchangeConfigs] = useState({});
   const [editingFeeFor, setEditingFeeFor] = useState(null);
 
   useEffect(() => {
     async function load() {
-      const [{ data: accountsData }, { data: resultsData }] = await Promise.all([
+      const [{ data: accountsData }, { data: resultsData }, { data: monthlyData }] = await Promise.all([
         supabase
           .from('accounts')
           .select('id,name,platform,phone,active,sort_order,selected_for_total,selected_for_withdrawals,withdrawal_fee,currency_symbol,exchange_rate')
@@ -74,6 +75,11 @@ export default function Saldos() {
           .not('balance', 'is', null)
           .order('executed_at', { ascending: false })
           .limit(1000),
+        supabase
+          .from('monthly_withdrawals')
+          .select('*')
+          .order('year', { ascending: false })
+          .order('month', { ascending: false }),
       ]);
 
       const accountsArray = accountsData || [];
@@ -98,6 +104,7 @@ export default function Saldos() {
 
       setAccounts(accountsArray);
       setResults(resultsData || []);
+      setMonthlyWithdrawals(monthlyData || []);
       setLoading(false);
     }
 
@@ -318,6 +325,53 @@ export default function Saldos() {
       selectedForWithdrawals.has(account.key) ? sum + account.withdrawalNet : sum
     ), 0)
   ), [withdrawalSummaries, selectedForWithdrawals]);
+
+  const monthlyGrouped = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    // 1. Calculate current month live from withdrawalSummaries
+    const currentMonthTotal = withdrawalSummaries.reduce((sum, acc) => {
+      if (!selectedForWithdrawals.has(acc.key)) return sum;
+      const currentMonthWithdrawals = (withdrawalsByAccount.get(acc.key) || []).filter(w => {
+        const d = new Date(w.date);
+        return d.getFullYear() === currentYear && (d.getMonth() + 1) === currentMonth;
+      });
+      const gross = currentMonthWithdrawals.reduce((s, w) => s + w.amount, 0);
+      const fee = withdrawalFees[acc.key] || 0;
+      return sum + (gross * (1 - fee / 100));
+    }, 0);
+
+    // 2. Process history from database, excluding current month to avoid double counting if synced
+    const history = [];
+    const months = new Set();
+    
+    // Group DB data by Month-Year
+    monthlyWithdrawals.forEach(item => {
+      // Skip current month from DB as we calculate it live
+      if (item.year === currentYear && item.month === currentMonth) return;
+      
+      const mKey = `${item.year}-${item.month}`;
+      months.add(mKey);
+    });
+
+    Array.from(months).forEach(mKey => {
+      const [year, month] = mKey.split('-').map(Number);
+      const net = monthlyWithdrawals
+        .filter(item => item.year === year && item.month === month && selectedForWithdrawals.has(item.account_key))
+        .reduce((sum, item) => sum + Number(item.total_net), 0);
+      
+      history.push({ year, month, net });
+    });
+
+    return [
+      { year: currentYear, month: currentMonth, net: currentMonthTotal, isCurrent: true },
+      ...history.sort((a, b) => b.year - a.year || b.month - a.month)
+    ];
+  }, [monthlyWithdrawals, withdrawalSummaries, selectedForWithdrawals, withdrawalsByAccount, withdrawalFees]);
+
+  const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
   const selectedWithdrawalHistory = useMemo(() => (
     withdrawalsByAccount.get(withdrawalModalAccount) || []
@@ -630,6 +684,27 @@ export default function Saldos() {
             <p className="text-gray-400">Nenhum saldo ou conta cadastrada.</p>
           </div>
         )}
+      </div>
+
+      {/* Saques por Mês */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-4">
+          <ArrowDownCircle size={20} className="text-emerald-400" />
+          <h2 className="text-lg font-bold text-white">Saques por Mês</h2>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {monthlyGrouped.map((m, i) => (
+            <div key={`${m.year}-${m.month}`} className={`p-4 rounded-2xl border ${m.isCurrent ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-gray-800/40 border-gray-700/50'}`}>
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{monthNames[m.month - 1]} {m.year}</p>
+                {m.isCurrent && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold uppercase">Vigente</span>}
+              </div>
+              <p className={`text-xl font-bold ${m.isCurrent ? 'text-white' : 'text-gray-300'}`}>{formatCurrency(m.net)}</p>
+              <p className="text-[10px] text-gray-500 mt-1">Líquido consolidado</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Modal Historico de Saldo */}
