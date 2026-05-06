@@ -611,7 +611,7 @@ export default function Saldos() {
                       <p className="text-[10px] text-gray-500 truncate shrink-0">Bruto +{formatCurrency(ws.withdrawalTotal)}</p>
                     </div>
                     <p className="text-[9px] sm:text-[10px] text-gray-500 truncate mt-1">
-                      Último: {formatDate(ws.latestWithdrawal?.executed_at)}
+                      Último: {formatDate(ws.latestWithdrawal?.date)}
                     </p>
                   </div>
                 ) : (
