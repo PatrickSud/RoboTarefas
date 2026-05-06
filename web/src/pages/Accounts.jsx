@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Copy, Download } from 'lucide-react';
+import { Plus, ToggleLeft, ToggleRight, Pencil, Trash2, GripVertical, FlaskConical, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Copy, Download, Upload } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -289,6 +289,54 @@ export default function Accounts() {
     URL.revokeObjectURL(url);
   }
 
+  async function importBackup(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const content = await file.text();
+      const backup = JSON.parse(content);
+      const accountsBackup = Array.isArray(backup.accounts) ? backup.accounts : [];
+      const settingsBackup = Array.isArray(backup.global_settings) ? backup.global_settings : [];
+
+      if (accountsBackup.length === 0 && settingsBackup.length === 0) {
+        alert('Arquivo de backup inválido ou vazio.');
+        return;
+      }
+
+      if (!confirm(`Importar ${accountsBackup.length} conta(s) e ${settingsBackup.length} configuração(ões)? Os registros existentes com o mesmo ID serão atualizados.`)) {
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const sanitizedAccounts = accountsBackup.map(account => ({
+        ...account,
+        updated_at: now,
+      }));
+      const sanitizedSettings = settingsBackup.map(setting => ({
+        ...setting,
+        updated_at: now,
+      }));
+
+      if (sanitizedAccounts.length > 0) {
+        const { error } = await supabase.from('accounts').upsert(sanitizedAccounts, { onConflict: 'id' });
+        if (error) throw error;
+      }
+
+      if (sanitizedSettings.length > 0) {
+        const { error } = await supabase.from('global_settings').upsert(sanitizedSettings, { onConflict: 'key' });
+        if (error) throw error;
+      }
+
+      await fetchAccounts();
+      syncAwsSchedule(sanitizedAccounts);
+      alert('Backup importado com sucesso.');
+    } catch (error) {
+      alert('Erro ao importar backup: ' + error.message);
+    }
+  }
+
   async function handleDragEnd(event) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -322,6 +370,11 @@ export default function Accounts() {
             <Download size={16} />
             Exportar JSON
           </button>
+          <label className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors cursor-pointer">
+            <Upload size={16} />
+            Importar JSON
+            <input type="file" accept="application/json,.json" onChange={importBackup} className="hidden" />
+          </label>
           <button
             onClick={() => { setEditingAccount(null); setShowForm(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"

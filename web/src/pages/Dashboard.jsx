@@ -51,6 +51,36 @@ async function parseApiResponse(response) {
   }
 }
 
+function groupLogSessions(logText) {
+  const lines = logText ? logText.split('\n').filter(Boolean) : [];
+  if (lines.length === 0) return [];
+
+  const sessions = [];
+  let current = null;
+
+  for (const line of lines) {
+    if (line.includes('INÍCIO DA SESSÃO')) {
+      if (current) sessions.push(current);
+      current = { title: line, lines: [line] };
+      continue;
+    }
+
+    if (!current) {
+      current = { title: 'Logs anteriores', lines: [] };
+    }
+
+    current.lines.push(line);
+
+    if (line.includes('FIM DA SESSÃO')) {
+      sessions.push(current);
+      current = null;
+    }
+  }
+
+  if (current) sessions.push(current);
+  return sessions.reverse();
+}
+
 export default function Dashboard() {
   const [results, setResults] = useState([]);
   const [activeAccounts, setActiveAccounts] = useState([]);
@@ -67,6 +97,7 @@ export default function Dashboard() {
   const [modalUrl, setModalUrl] = useState(null);
   const [logsModalOpen, setLogsModalOpen] = useState(false);
   const logsRef = useRef(null);
+  const livePollingRef = useRef(false);
 
 
   async function fetchLatestResults() {
@@ -172,6 +203,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    livePollingRef.current = livePolling;
+  }, [livePolling]);
+
+  useEffect(() => {
     fetchLatestResults();
     fetchAwsStatusAndLogs();
     fetchLogs();
@@ -182,6 +217,7 @@ export default function Dashboard() {
         fetchLatestResults();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'system_logs' }, (payload) => {
+        if (!livePollingRef.current) return;
         setLogs(prev => {
           const newLogs = prev ? prev + '\n' + payload.new.message : payload.new.message;
           setTimeout(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, 100);
@@ -211,13 +247,6 @@ export default function Dashboard() {
       clearInterval(interval);
     };
   }, [livePolling]);
-
-  useEffect(() => {
-    if (!logsOpen || livePolling) return;
-
-    const interval = setInterval(fetchLogs, 15000);
-    return () => clearInterval(interval);
-  }, [logsOpen, livePolling]);
 
   async function handleRunNow() {
     setRunning(true);
@@ -289,7 +318,6 @@ export default function Dashboard() {
 
   const successCount = results.filter(r => r.status === 'success').length;
   const errorCount = results.filter(r => r.status === 'error').length;
-  const executedCount = results.filter(r => r.executed_at && r.status !== 'pending').length;
   const latestExecutionDate = results
     .filter(r => r.executed_at)
     .map(r => new Date(r.executed_at))
@@ -322,11 +350,7 @@ export default function Dashboard() {
     { key: 'finished', label: 'Finalizado' },
   ];
   const currentStepIndex = runSteps.findIndex(step => step.key === runStep);
-  const logsLines = logs ? logs.split('\n') : [];
-  const latestSessionStart = logsLines.findLastIndex(line => line.includes('INÍCIO DA SESSÃO'));
-  const visibleLogs = latestSessionStart >= 0
-    ? logsLines.slice(latestSessionStart).join('\n')
-    : logsLines.slice(-80).join('\n');
+  const logSessions = groupLogSessions(logs);
 
   async function toggleAutoShutdown() {
     const newValue = !autoShutdown;
@@ -395,7 +419,7 @@ export default function Dashboard() {
       </div>
 
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 md:gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-4 mb-6">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
           <p className="text-[11px] uppercase tracking-wider text-gray-500">Última execução</p>
           <p className="text-sm md:text-base font-semibold text-white mt-1">{latestExecutionDate ? latestExecutionDate.toLocaleString('pt-BR') : 'Sem execução'}</p>
@@ -403,14 +427,6 @@ export default function Dashboard() {
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
           <p className="text-[11px] uppercase tracking-wider text-gray-500">Próxima execução</p>
           <p className="text-sm md:text-base font-semibold text-white mt-1">{nextSchedule || 'Sem agendamento'}</p>
-        </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
-          <p className="text-[11px] uppercase tracking-wider text-gray-500">Executadas</p>
-          <p className="text-sm md:text-base font-semibold text-white mt-1">{executedCount} conta(s)</p>
-        </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
-          <p className="text-[11px] uppercase tracking-wider text-gray-500">Com erro</p>
-          <p className="text-sm md:text-base font-semibold text-red-300 mt-1">{errorCount} conta(s)</p>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
           <p className="text-[11px] uppercase tracking-wider text-gray-500">Tempo total</p>
@@ -522,13 +538,24 @@ export default function Dashboard() {
               <div className="flex items-center justify-center py-8">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
               </div>
+            ) : logSessions.length === 0 ? (
+              <div className="text-xs text-gray-500 bg-gray-950 p-4">
+                (Sem logs)
+              </div>
             ) : (
-              <pre
-                ref={logsRef}
-                className="text-xs text-green-300 font-mono bg-gray-950 p-4 overflow-auto max-h-72 whitespace-pre-wrap leading-5"
-              >
-                {visibleLogs || '(Sem logs)'}
-              </pre>
+              <div ref={logsRef} className="bg-gray-950 p-4 overflow-auto max-h-96 space-y-3">
+                {logSessions.map((session, index) => (
+                  <div key={`${session.title}-${index}`} className="border border-gray-800 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-900 text-[11px] font-semibold text-gray-300 flex items-center justify-between gap-2">
+                      <span className="truncate">{session.title}</span>
+                      <span className="text-gray-600 shrink-0">{session.lines.length} linha(s)</span>
+                    </div>
+                    <pre className="text-xs text-green-300 font-mono p-3 whitespace-pre-wrap leading-5">
+                      {session.lines.join('\n')}
+                    </pre>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
