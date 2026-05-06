@@ -15,6 +15,22 @@ function PrintModal({ url, onClose }) {
   );
 }
 
+function parseBalance(value) {
+  if (!value || typeof value !== 'string') return 0;
+  const normalized = value
+    .replace(/[^\d,.-]/g, '')
+    .replace(',', '.');
+  const parsed = parseFloat(normalized);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(value || 0);
+}
+
 function LogsModal({ logs, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
@@ -388,6 +404,9 @@ export default function Dashboard() {
 
   const successCount = results.filter(r => r.status === 'success').length;
   const errorCount = results.filter(r => r.status === 'error').length;
+  
+  const totalVolume = results.reduce((sum, r) => sum + parseBalance(r.balance), 0);
+
   const latestExecutionDate = results
     .filter(r => r.executed_at)
     .map(r => new Date(r.executed_at))
@@ -499,9 +518,9 @@ export default function Dashboard() {
           <p className="text-[11px] sm:text-sm md:text-base font-semibold text-white mt-1 truncate">{nextSchedule || 'Sem agend.'}</p>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4 min-w-0">
-          <p className="text-[9px] sm:text-[11px] uppercase tracking-wide sm:tracking-wider text-gray-500 truncate">Tempo</p>
-          <p className="text-[11px] sm:text-sm md:text-base font-semibold text-white mt-1 truncate">
-            {latestExecutionDuration !== null ? `${Math.max(1, Math.round(latestExecutionDuration / 60000))} min` : 'Indisponível'}
+          <p className="text-[9px] sm:text-[11px] uppercase tracking-wide sm:tracking-wider text-gray-500 truncate">Volume Total</p>
+          <p className="text-[11px] sm:text-sm md:text-base font-semibold text-white mt-1 truncate" title={formatCurrency(totalVolume)}>
+            {formatCurrency(totalVolume)}
           </p>
         </div>
       </div>
