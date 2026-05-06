@@ -131,6 +131,7 @@ export default function Saldos() {
 
       return {
         key,
+        id: account.id,
         name: account.name,
         platform: latest?.platform || account.platform,
         phone: latest?.phone || account.phone,
@@ -153,6 +154,7 @@ export default function Saldos() {
         
         merged.push({
           key,
+          id: null,
           name: result.account_name,
           platform: result.platform,
           phone: result.phone,
@@ -177,30 +179,28 @@ export default function Saldos() {
     });
   }, [accounts, results, exchangeConfigs]);
 
-  // Inicializamos os ghosts items caso eles não existam no accounts table
+  // Auto-seleciona apenas contas "fantasmas" (orfãs do banco, sem id)
+  // Contas reais têm a seleção gerenciada pelo Supabase
   useEffect(() => {
-    if (summaries.length === 0) return;
-    let hasGhostUpdates = false;
-    
+    const orphans = summaries.filter(s => !s.id);
+    if (orphans.length === 0) return;
+
     setSelectedForTotal(prev => {
       const next = new Set(prev);
-      for (const summary of summaries) {
-        if (!summary.id && !next.has(summary.key)) {
-          next.add(summary.key);
-          hasGhostUpdates = true;
-        }
+      let changed = false;
+      for (const s of orphans) {
+        if (!next.has(s.key)) { next.add(s.key); changed = true; }
       }
-      return hasGhostUpdates ? next : prev;
+      return changed ? next : prev;
     });
 
     setSelectedForWithdrawals(prev => {
       const next = new Set(prev);
-      for (const summary of summaries) {
-        if (!summary.id && !next.has(summary.key)) {
-          next.add(summary.key);
-        }
+      let changed = false;
+      for (const s of orphans) {
+        if (!next.has(s.key)) { next.add(s.key); changed = true; }
       }
-      return hasGhostUpdates ? next : prev; // We re-use hasGhostUpdates to only trigger if necessary
+      return changed ? next : prev;
     });
   }, [summaries]);
 
