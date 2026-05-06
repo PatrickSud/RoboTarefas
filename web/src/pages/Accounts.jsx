@@ -368,11 +368,11 @@ export default function Accounts() {
             className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
           >
             <Download size={16} />
-            Exportar JSON
+            Exportar
           </button>
           <label className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors cursor-pointer">
             <Upload size={16} />
-            Importar JSON
+            Importar
             <input type="file" accept="application/json,.json" onChange={importBackup} className="hidden" />
           </label>
           <button

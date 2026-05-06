@@ -419,18 +419,18 @@ export default function Dashboard() {
       </div>
 
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-4 mb-6">
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
-          <p className="text-[11px] uppercase tracking-wider text-gray-500">Última execução</p>
-          <p className="text-sm md:text-base font-semibold text-white mt-1">{latestExecutionDate ? latestExecutionDate.toLocaleString('pt-BR') : 'Sem execução'}</p>
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6">
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4 min-w-0">
+          <p className="text-[9px] sm:text-[11px] uppercase tracking-wide sm:tracking-wider text-gray-500 truncate">Última</p>
+          <p className="text-[11px] sm:text-sm md:text-base font-semibold text-white mt-1 truncate" title={latestExecutionDate ? latestExecutionDate.toLocaleString('pt-BR') : 'Sem execução'}>{latestExecutionDate ? latestExecutionDate.toLocaleString('pt-BR') : 'Sem execução'}</p>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
-          <p className="text-[11px] uppercase tracking-wider text-gray-500">Próxima execução</p>
-          <p className="text-sm md:text-base font-semibold text-white mt-1">{nextSchedule || 'Sem agendamento'}</p>
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4 min-w-0">
+          <p className="text-[9px] sm:text-[11px] uppercase tracking-wide sm:tracking-wider text-gray-500 truncate">Próxima</p>
+          <p className="text-[11px] sm:text-sm md:text-base font-semibold text-white mt-1 truncate">{nextSchedule || 'Sem agend.'}</p>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4">
-          <p className="text-[11px] uppercase tracking-wider text-gray-500">Tempo total</p>
-          <p className="text-sm md:text-base font-semibold text-white mt-1">
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 md:p-4 min-w-0">
+          <p className="text-[9px] sm:text-[11px] uppercase tracking-wide sm:tracking-wider text-gray-500 truncate">Tempo</p>
+          <p className="text-[11px] sm:text-sm md:text-base font-semibold text-white mt-1 truncate">
             {latestExecutionDuration !== null ? `${Math.max(1, Math.round(latestExecutionDuration / 60000))} min` : 'Indisponível'}
           </p>
         </div>
