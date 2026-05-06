@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { ArrowDownCircle, CheckCircle2, Circle, Clock, History, Plus, Settings, Trash2, Wallet, X } from 'lucide-react';
+import { ArrowDownCircle, CheckCircle2, ChevronDown, ChevronUp, Circle, Clock, Filter, History, Plus, Settings, Trash2, Wallet, X } from 'lucide-react';
 
 const COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6', '#60a5fa', '#a78bfa', '#facc15'];
 
@@ -75,6 +75,7 @@ export default function Saldos() {
   const [movementFilter, setMovementFilter] = useState('all');
   const [summarySort, setSummarySort] = useState('platform');
   const [editingFeeFor, setEditingFeeFor] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -303,6 +304,18 @@ export default function Saldos() {
   const consolidatedWithdrawalsNet = useMemo(() => (
     withdrawalSummaries.reduce((sum, account) => (
       selectedForWithdrawals.has(account.key) ? sum + account.depositWithdrawalNet : sum
+    ), 0)
+  ), [withdrawalSummaries, selectedForWithdrawals]);
+
+  const consolidatedDepositsTotal = useMemo(() => (
+    withdrawalSummaries.reduce((sum, account) => (
+      selectedForWithdrawals.has(account.key) ? sum + account.depositTotal : sum
+    ), 0)
+  ), [withdrawalSummaries, selectedForWithdrawals]);
+
+  const consolidatedWithdrawalsNetOnly = useMemo(() => (
+    withdrawalSummaries.reduce((sum, account) => (
+      selectedForWithdrawals.has(account.key) ? sum + account.withdrawalNet : sum
     ), 0)
   ), [withdrawalSummaries, selectedForWithdrawals]);
 
@@ -611,49 +624,82 @@ export default function Saldos() {
         {/* Total Depósito/Saque */}
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl px-5 py-4 flex flex-col justify-between">
           <div>
-            <p className="text-xs text-emerald-300 font-semibold uppercase tracking-wider">Depósito/Saque Consolidado</p>
-            <p className={`text-3xl font-bold mt-1 ${consolidatedWithdrawalsNet >= 0 ? 'text-white' : 'text-red-300'}`}>{formatCurrency(consolidatedWithdrawalsNet)}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-emerald-300 font-semibold uppercase tracking-wider">Depósito/Saque Consolidado</p>
+              <p className={`text-xl font-bold ${consolidatedWithdrawalsNet >= 0 ? 'text-white' : 'text-red-300'}`}>{formatCurrency(consolidatedWithdrawalsNet)}</p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase">Depósitos</p>
+                <p className="text-sm font-semibold text-white">{formatCurrency(consolidatedDepositsTotal)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-gray-500 uppercase">Saques Líquidos</p>
+                <p className="text-sm font-semibold text-emerald-400">{formatCurrency(consolidatedWithdrawalsNetOnly)}</p>
+              </div>
+            </div>
           </div>
           <div className="flex items-center justify-between mt-4 pt-2 border-t border-emerald-500/20">
-            <p className="text-xs text-emerald-200/60">
-              Saques brutos {formatCurrency(consolidatedWithdrawalsTotal)} • {selectedForWithdrawals.size} de {withdrawalSummaries.length}
+            <p className="text-[10px] text-emerald-200/60 uppercase tracking-tight">
+              Resultado final: {formatCurrency(consolidatedWithdrawalsNet)}
             </p>
+            <div className="flex gap-3">
+              <button onClick={selectAllWithdrawals} className="text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors">Todas</button>
+              <button onClick={clearWithdrawalSelection} className="text-xs font-medium text-gray-400 hover:text-gray-300 transition-colors">Nenhuma</button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-white">Visualização das contas</p>
-          <p className="text-xs text-gray-500 mt-0.5">{displaySummaries.length} de {summaries.length} contas exibidas</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div>
-            <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1">Filtro</label>
-            <select
-              value={movementFilter}
-              onChange={event => setMovementFilter(event.target.value)}
-              className="w-full sm:w-44 px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="all">Todas</option>
-              <option value="positive">Com lucro</option>
-              <option value="negative">Com prejuízo</option>
-              <option value="none">Sem movimentação</option>
-            </select>
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden transition-all duration-300">
+        <button 
+          onClick={() => setShowFilters(!showFilters)}
+          className="w-full px-4 py-3 flex items-center justify-between bg-gray-900 hover:bg-gray-800/50 transition-colors lg:hidden"
+        >
+          <div className="flex items-center gap-2">
+            <Filter size={16} className="text-indigo-400" />
+            <span className="text-sm font-semibold text-white">Visualização das contas</span>
           </div>
-          <div>
-            <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1">Ordenar por</label>
-            <select
-              value={summarySort}
-              onChange={event => setSummarySort(event.target.value)}
-              className="w-full sm:w-52 px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="platform">Plataforma/Nome</option>
-              <option value="balance">Maior saldo</option>
-              <option value="withdrawals">Maior saque líquido</option>
-              <option value="deposits">Maior depósito</option>
-              <option value="result">Maior resultado líquido</option>
-            </select>
+          {showFilters ? <ChevronUp size={18} className="text-gray-500" /> : <ChevronDown size={18} className="text-gray-500" />}
+        </button>
+
+        <div className={`${showFilters ? 'block' : 'hidden'} lg:block px-4 py-4 lg:py-3 border-t border-gray-800 lg:border-t-0`}>
+          <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
+            <div className="hidden lg:block">
+              <p className="text-sm font-semibold text-white">Visualização das contas</p>
+              <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider">{displaySummaries.length} de {summaries.length} contas exibidas</p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 ml-1">Filtro de Resultado</label>
+                <select
+                  value={movementFilter}
+                  onChange={event => setMovementFilter(event.target.value)}
+                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-xl text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                >
+                  <option value="all">Todas as contas</option>
+                  <option value="positive">Com lucro líquido</option>
+                  <option value="negative">Com prejuízo líquido</option>
+                  <option value="none">Sem movimentação</option>
+                </select>
+              </div>
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 ml-1">Ordenar por</label>
+                <select
+                  value={summarySort}
+                  onChange={event => setSummarySort(event.target.value)}
+                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-xl text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                >
+                  <option value="platform">Plataforma / Nome</option>
+                  <option value="balance">Maior saldo atual</option>
+                  <option value="withdrawals">Maior saque líquido</option>
+                  <option value="deposits">Maior depósito total</option>
+                  <option value="result">Melhor resultado final</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
