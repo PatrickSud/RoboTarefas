@@ -51,6 +51,7 @@ console.error = (...args) => handleLog(util.format(...args), true)
 // ==========================================
 
 const port = Number(process.env.ROBOT_API_PORT || 3001)
+const host = process.env.ROBOT_API_HOST || '0.0.0.0'
 const token = process.env.ROBOT_API_TOKEN
 const retentionDays = Number(process.env.PRINT_RETENTION_DAYS || 7)
 const idleTimeoutMin = Number(process.env.IDLE_TIMEOUT_MIN || 10)
@@ -375,8 +376,15 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 404, { ok: false, message: 'Endpoint não encontrado.' })
 })
 
-server.listen(port, () => {
-  console.log(`API do RoboTarefas ouvindo na porta ${port}`)
+server.on('error', error => {
+  console.error(
+    `Falha ao iniciar API do RoboTarefas em ${host}:${port}:`,
+    error
+  )
+})
+
+server.listen(port, host, () => {
+  console.log(`API do RoboTarefas ouvindo em http://${host}:${port}`)
   if (!token)
     console.warn(
       'ROBOT_API_TOKEN não configurado. Endpoints protegidos não funcionarão.'
