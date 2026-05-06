@@ -25,7 +25,8 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js')
 const { buscarContasParaProcessar } = require('./services/accountService')
 const { salvarResultadoConta } = require('./services/runResultService')
 const { uploadPrintToStorage } = require('./services/storageService')
-const { supabase } = require('./services/supabaseClient')
+const { getSupabaseClient } = require('./services/supabaseClient')
+const supabase = getSupabaseClient()
 const googleAiApiKey = process.env.GOOGLE_AI_API_KEY
 
 const client = new Client({
@@ -91,11 +92,15 @@ client.on('qr', async qr => {
   }
 })
 
-function iniciarAutomacao(motivo) {
+async function iniciarAutomacao(motivo) {
   if (automacaoIniciada) return
   automacaoIniciada = true
-  console.log(`Iniciando automação (${motivo})...`)
-  executarAutomacao()
+  console.log(`[INFO] Iniciando automação (${motivo})...`)
+  try {
+    await executarAutomacao()
+  } catch (err) {
+    console.error('[ERRO] Erro na execução da automação:', err.message)
+  }
 }
 
 client.on('ready', () => {
@@ -105,6 +110,7 @@ client.on('ready', () => {
 
 client.initialize()
 
+// Timeout de segurança para iniciar mesmo que o WhatsApp demore/falhe
 setTimeout(() => {
   iniciarAutomacao(
     `timeout de ${Math.round(whatsappReadyTimeoutMs / 1000)}s aguardando WhatsApp`
@@ -1539,7 +1545,11 @@ async function executarAutomacao() {
       for (const r of resultadosOntem) mapOntem[r.account_name] = r.balance
 
       const linhasComparativo = []
-      for (const [nome, { saldo, plataforma }] of Object.entries(saldosHoje)) {
+      for (const [nome, entry] of Object.entries(saldosHoje)) {
+        if (!entry || typeof entry !== 'object') continue
+        const saldo = entry.saldo
+        const plataforma = entry.plataforma
+        if (!saldo || !plataforma) continue
         const saldoAnt = mapOntem[nome]
         if (saldoAnt) {
           const atual = parseFloat(saldo.replace(',', '.')) || 0
@@ -1666,14 +1676,8 @@ async function enviarEmail(conteudo, dataHoje) {
     console.log('E-mail final enviado com sucesso! ID:', info.messageId)
 
     // Deleta o log após o envio bem-sucedido (atendendo ao pedido do usuário)
-    if (fs.existsSync('log_sistema.txt')) {
-      try {
-        fs.unlinkSync('log_sistema.txt')
-        console.log('Arquivo log_sistema.txt excluído após envio do e-mail.')
-      } catch (e) {
-        console.error('Erro ao excluir log_sistema.txt:', e.message)
-      }
-    }
+    // O log_sistema.txt não é excluído aqui pois é usado pelo processo de redirecionamento (EBUSY).
+    // O script de boot (iniciar_robo.bat) já reseta o arquivo em cada reinicialização.
   } catch (erro) {
     console.error('Falha ao enviar e-mail final:', erro.message)
   }
@@ -1788,6 +1792,13 @@ async function enviarWhatsApp(
   plataforma
 ) {
   try {
+    // Verifica se o cliente está pronto antes de tentar enviar
+    const state = await client.getState().catch(() => null)
+    if (state !== 'CONNECTED') {
+      console.log(` -> Pulando WhatsApp para ${nome}: Cliente desconectado (${state})`)
+      return
+    }
+
     const numeroDestino = `55${numero}@c.us`
     let mensagem = ''
     const nomePlataforma =
@@ -1814,7 +1825,7 @@ async function enviarWhatsApp(
       await client.sendMessage(numeroDestino, mensagem)
     }
     console.log(
-      ` -> WhatsApp de status (Tarefas: ${qtdTarefas}) enviado para ${nome} com sucesso!`
+      `[SUCESSO] -> WhatsApp de status (Tarefas: ${qtdTarefas}) enviado para ${nome} com sucesso!`
     )
   } catch (erro) {
     console.error(
@@ -1826,20 +1837,24 @@ async function enviarWhatsApp(
 
 async function enviarWhatsAppErro(numero, nome, dataHoje, caminhoPrint) {
   try {
+    const state = await client.getState().catch(() => null)
+    if (state !== 'CONNECTED') {
+      console.log(` -> Pulando WhatsApp de erro para ${nome}: Cliente desconectado (${state})`)
+      return
+    }
+
     const numeroDestino = `55${numero}@c.us`
     const mensagem = `⚠️ *Aviso Urgente: Falha de Acesso* ⚠️\n\nOlá, ${nome}!\nO robô tentou acessar sua conta hoje (${dataHoje}) e encontrou um erro, não sendo possível concluir as tarefas.\n\nVeja o print da tela no momento do erro abaixo.`
 
-    // Verifica se a foto existe. Se existir, envia a foto com o texto embaixo (caption).
     if (caminhoPrint && fs.existsSync(caminhoPrint)) {
       const media = MessageMedia.fromFilePath(caminhoPrint)
       await client.sendMessage(numeroDestino, media, { caption: mensagem })
     } else {
-      // Se por algum motivo a foto não existir, envia apenas o texto.
       await client.sendMessage(numeroDestino, mensagem)
     }
 
     console.log(
-      ` -> WhatsApp de ERRO (com imagem) enviado para ${nome} com sucesso!`
+      `[SUCESSO] -> WhatsApp de ERRO (com imagem) enviado para ${nome} com sucesso!`
     )
   } catch (erro) {
     console.error(
