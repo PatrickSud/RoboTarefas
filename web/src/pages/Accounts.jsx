@@ -401,7 +401,7 @@ export default function Accounts() {
         >
           <Plus size={16} />
           <span className="hidden sm:inline">Nova Conta</span>
-          <span className="sm:hidden">Nova</span>
+          <span className="sm:hidden">Nova Conta</span>
         </button>
       </div>
 
